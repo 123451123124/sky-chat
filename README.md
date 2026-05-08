@@ -1,123 +1,195 @@
 # Sky Chat - AI 智能对话平台
 
-## 项目概述
+全栈 AI 聊天平台，支持 SSE 流式对话、Function Calling 图片生成、自研监控 SDK、管理后台。
 
-目标：作为简历项目，展示全栈能力与前端工程化深度
+**技术栈：** Next.js 16.2.4 App Router + TypeScript + Tailwind CSS v4 + Zustand + Prisma + PostgreSQL (Supabase)  
+**AI：** Vercel AI SDK v6 + OpenAI Compatible API（Base URL: `https://yunwu.ai/v1`）
 
-技术栈：Next.js 16.2.4 App Router + TypeScript + Tailwind CSS + Zustand + Prisma + PostgreSQL (Supabase)
+---
 
-AI 调用：Vercel AI SDK v6 + OpenAI Compatible API（中转 API，Base URL: `https://yunwu.ai/v1`）
+## 快速开始
 
-项目路径：`C:\Users\jw\Desktop\sky-chat\sky-chat`
+### 环境变量
 
-***
+```bash
+# 复制环境变量模板
+cp .env.example .env
 
-## 项目组成部分
-
-### 1. AI 聊天客户端（app/chat）
-
-#### 核心功能
-
-- 流式对话（SSE + ReadableStream）
-- 会话管理（CRUD）
-- 状态机管理（thinking/answering/idle/error）
-- Markdown 消息渲染
-- 图片生成(Function Calling)、语音输入、文件上传、对话分享
-
-#### 技术亮点
-
-**SSE 解析层与状态机驱动**
-
-- 针对 EventSource 无法携带 POST Body 与自定义 Header 的限制，基于 Fetch + ReadableStream 封装 SSE 解析层
-- 设计有限状态机管理消息生命周期（thinking → tool\_calling → answering），SSE 事件驱动状态转换
-- 解决多轮 Function Calling 场景下 UI 与流式消息状态不同步的问题
-
-**渲染与性能优化**
-
-- 引入 buffer 缓冲队列配合 requestAnimationFrame 批量刷新，解决流式 chunk 高频触发 setState 导致的冗余 re-render，渲染频次从峰值 120 次/秒降至 40 次/秒以下
-- 针对流式输出时富文本块高度突变引发的布局偏移，组合预留骨架高度、overflow-anchor 滚动锚定、未闭合 Markdown 块自动补全消除抖动
-- 基于 TanStack Virtual 实现虚拟滚动，配合游标分页实现长会话场景下的流畅渲染
-- 利用 RSC 将分享页 Markdown 渲染移至服务端，Page chunk 压缩至 5.6KB，TBT 控制在 90ms 以内
-
-### 2. 自研监控 SDK（@sky/monitor）
-
-#### 核心功能
-
-- 采集前端性能指标（TTFB、TTLB、Stall 等）
-- IndexedDB 离线缓存
-- 批量上报
-- sendBeacon + Fetch fallback 双通道
-
-#### 技术亮点
-
-**SSE 流式场景指标体系**
-
-- 针对 SSE 流式场景扩展指标体系：首字节时间（TTFB）、流式完成时间（TTLB）、卡顿检测（Stall）、阶段耗时
-- 填补传统 HTTP 请求监控盲区
-
-**数据上报策略**
-
-- 采用 sendBeacon + Fetch fallback 双通道上报解决页面卸载时数据丢失
-- 基于 IndexedDB 实现离线队列支持弱网重传
-
-**会话录制**
-
-- 集成 rrweb 实现会话录制
-- 针对 SPA 路由切换导致的 DOM 快照断裂问题，设计 EventsMatrix 二维时间片存储方案
-- 配合 History API 劫持，实现路由变化时主动触发快照更新
-- 针对流式渲染场景采样 DOM 变更避免高频 mutation 性能问题
-
-### 3. 管理后台（app/admin）
-
-- 用户管理
-- ECharts 可视化（性能指标、会话统计）
-- 监控数据面板
-
-***
-
-## 数据库 Schema（Prisma）
-
-```prisma
-User {
-  id, email, name, sessions[]
-}
-
-Session {
-  id, userId?, title, shareToken?, messages[], createdAt, updatedAt
-}
-
-Message {
-  id, sessionId, role, content, createdAt
-}
+# 编辑 .env 填写配置
 ```
 
-***
+`.env` 所需变量：
 
-## 开发进度
+| 变量 | 说明 | 默认值 |
+|------|------|--------|
+| `DATABASE_URL` | PostgreSQL 连接字符串（Supabase） | 必填 |
+| `OPENAI_API_KEY` | OpenAI 兼容 API Key | 必填 |
+| `OPENAI_BASE_URL` | API 中转地址 | `https://yunwu.ai/v1` |
+| `OPENAI_MODEL` | 模型名 | `gpt-4o` |
+| `JWT_SECRET` | JWT 签名密钥 | 内置默认（生产环境请修改） |
 
-### AI 聊天客户端
+### 初始化数据库
 
-- [x] Next.js 16 App Router 基础架构
-- [x] Vercel AI SDK 流式对话基础实现
-- [x] Zustand 状态机定义
-- [x] 会话 CRUD API
-- [ ] SSE 解析层封装
-- [ ] buffer 缓冲队列 + RAF 批量渲染
-- [ ] Markdown 渲染 + 骨架屏
-- [ ] TanStack Virtual 虚拟滚动
-- [ ] RSC 分享页优化
-- [ ] Function Calling 图片生成
+```bash
+npm run seed
+```
 
-### 自研监控 SDK
+### 启动
 
-- [ ] 性能指标采集（TTFB/TTLB/Stall）
-- [ ] IndexedDB 离线队列
-- [ ] sendBeacon + Fetch 双通道上报
-- [ ] rrweb 会话录制
-- [ ] EventsMatrix 存储方案
+```bash
+npm run dev      # 开发服务器 http://localhost:3000
+npm run build    # 生产构建
+npm run start    # 启动生产服务
+```
 
-### 管理后台
+### 其他命令
 
-- [ ] 用户管理
-- [ ] ECharts 可视化
+```bash
+npm run lint        # ESLint 检查
+npx prisma studio   # Prisma Studio 数据库管理
+npx prisma migrate dev  # 创建/应用迁移
+```
 
+### 默认管理员账户
+
+执行 `npm run seed` 后自动创建：
+
+| 字段 | 默认值 |
+|------|--------|
+| 邮箱 | `admin@skychat.com` |
+| 密码 | `admin123` |
+| 角色 | 管理员 |
+
+可通过环境变量覆盖：
+
+```bash
+ADMIN_EMAIL=admin@example.com ADMIN_PASSWORD=secure-password npm run seed
+```
+
+普通用户需通过 `/register` 页面注册。
+
+---
+
+## 项目结构
+
+```
+app/
+├── page.tsx               # 首页（已登录自动跳转 /chat）
+├── login/                 # 登录页
+├── register/              # 注册页
+├── chat/                  # AI 聊天客户端
+│   ├── page.tsx           # RSC 页面（服务端鉴权 + 数据预取）
+│   ├── ChatPageClient.tsx # 页面客户端（会话管理）
+│   ├── ChatContainer.tsx  # 核心容器（SSE + StreamBuffer + 状态机 + 分享）
+│   └── components/
+│       ├── MessageList.tsx       # 虚拟滚动消息列表（智能滚动、复制/重新生成）
+│       ├── MarkdownRenderer.tsx  # Markdown 渲染 + 流式补全 + 工具调用卡片
+│       ├── ChatInput.tsx         # 自动伸缩输入框
+│       ├── Sidebar.tsx           # 会话侧边栏 + 用户信息
+│       └── ThinkingIndicator.tsx # 状态指示器（thinking/tool_calling/answering）
+├── share/[token]/         # RSC 分享页（公开，无需登录，客户端 JS ~5.6KB）
+├── admin/                 # 管理后台（ECharts 可视化）
+│   ├── page.tsx           # RSC 页面（仅管理员）
+│   └── AdminPageClient.tsx
+├── api/
+│   ├── auth/              # JWT 认证（register/login/logout/me）
+│   ├── chat/              # SSE 流式对话 + Function Calling（原生 ReadableStream）
+│   ├── session/           # 会话 CRUD（用户隔离）
+│   ├── message/           # 消息 CRUD
+│   ├── share/             # 分享链接生成
+│   ├── generate-image/    # DALL-E 3 图片生成
+│   ├── monitor/           # 监控数据上报/查询
+│   └── user/              # 用户管理（仅管理员）
+├── middleware.ts          # 路由保护（JWT 校验 + 角色检查）
+├── components/            # 共享 UI 组件
+│   ├── ThemeProvider.tsx  # 暗色模式上下文
+│   ├── ThemeToggle.tsx    # 主题切换按钮
+│   └── ui/               # shadcn/ui 组件
+├── lib/
+│   ├── auth.ts            # JWT + bcrypt 工具
+│   ├── prisma.ts          # Prisma Client 单例
+│   ├── sse-parser.ts      # SSE 流式解析层
+│   ├── ai-stream.ts       # 类型化事件分发（14 种 chunk 类型）
+│   ├── stream-buffer.ts   # RAF 批量渲染缓冲
+│   └── monitor/           # 自研监控 SDK
+│       ├── types.ts       # 指标类型定义
+│       ├── collector.ts   # SSEPerformanceTracker + WebVitalsCollector
+│       ├── indexeddb.ts   # IndexedDB 离线队列
+│       └── reporter.ts    # sendBeacon + Fetch 双通道上报
+└── store/
+    ├── useChatStore.ts    # 聊天状态机（Zustand）
+    └── useAuthStore.ts    # 认证状态
+```
+
+---
+
+## 核心架构
+
+### 流式对话数据流
+
+```
+用户输入 → ChatContainer.handleSend()
+  → setStatus('thinking')
+  → fetch POST /api/chat (携带 JWT Cookie)
+  → 服务端 getCurrentUser() 鉴权
+  → fetch OpenAI chat/completions (stream: true, tools)
+  → 解析 OpenAI SSE → 转换为 14 种自定义事件
+  → ReadableStream 推送 → 客户端 TextDecoder
+  → SSEParser 解析 → handleStreamChunk 分发
+  → onTextDelta → StreamBuffer.push() → RAF → flush()
+  → appendTextDelta() → React 批量渲染
+  → onFinish → finalizeCurrentMessage() → saveMessage()
+  → SSEPerformanceTracker → IndexedDB → 批量上报
+```
+
+### SSE 事件协议（自定义类型）
+
+| 事件 | 说明 |
+|------|------|
+| `text-start/delta/end` | AI 文本输出 |
+| `reasoning-start/delta/end` | 推理过程 |
+| `tool-input-start/delta/available` | 工具参数流式解析 |
+| `tool-output-available/error` | 工具执行结果 |
+| `step-start` | 多轮 Function Calling 步骤切换 |
+| `finish` | 流式结束 |
+| `error/abort` | 错误/中断 |
+
+### 消息状态机
+
+```
+idle → thinking → answering → idle
+                 ↘ tool_calling → answering → idle
+                                ↘ error
+```
+
+### 渲染优化
+
+- **StreamBuffer + requestAnimationFrame** — 将 120 次/秒的 setState 合并为 ~40 次/秒，与屏幕刷新同步
+- **自动补全未闭合 Markdown** — 流式输出时补全 ` ``` `、`**` 等标记，消除布局抖动
+- **TanStack Virtual 虚拟滚动** — 只渲染可视区域消息（+ overscan 5），支持长会话流畅滚动
+- **智能滚动** — 检测用户是否向上滚动，自动暂停/恢复滚动行为
+
+### 监控 SDK
+
+- **SSE 流式指标**：TTFB、TTLB、Stall（>500ms 间隔检测）、阶段耗时
+- **离线队列**：IndexedDB 存储 → 每 10s 批量上报 → 成功后清除
+- **双通道上报**：sendBeacon（卸载可靠） + fetch keepalive（payload 更大）
+
+### 认证与安全
+
+- JWT（jose, HS256, 7d 过期），httpOnly Cookie
+- 中间件层路由保护 + API 层权限校验（双层防护）
+- bcrypt 密码哈希（10 轮 salt）
+- 用户数据隔离（只能操作自己的会话/消息）
+
+---
+
+## 项目亮点
+
+详细技术深度解析见 [PROJECT_HIGHLIGHTS.md](./PROJECT_HIGHLIGHTS.md)，涵盖：
+
+1. SSE 流式传输与有限状态机设计
+2. Buffer + requestAnimationFrame 渲染性能优化
+3. 流式 Markdown 渲染优化
+4. TanStack Virtual 虚拟滚动
+5. 自研监控 SDK：SSE 流式场景指标体系

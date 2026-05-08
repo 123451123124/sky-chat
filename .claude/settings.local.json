@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run *)",
+      "Bash(npx prisma *)",
+      "Bash(curl -v --connect-timeout 10 telnet://db.dajqdoxqwssxbivddecy.supabase.co:5432)",
+      "Bash(psql --version)",
+      "Bash(nslookup db.dajqdoxqwssxbivddecy.supabase.co)",
+      "Bash(nslookup *)",
+      "Bash(curl *)",
+      "Bash(npm install *)",
+      "Bash(node *)"
+    ]
+  }
+}

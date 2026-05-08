@@ -1,8 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -14,8 +9,10 @@ datasource db {
 
 model User {
   id        String    @id @default(cuid())
-  email     String?   @unique
-  name      String?
+  email     String    @unique
+  name      String
+  password  String
+  role      String    @default("user")
   sessions  Session[]
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -36,7 +33,23 @@ model Message {
   id        String    @id @default(cuid())
   sessionId String
   session   Session   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  role      String    // "user" | "assistant"
+  role      String
   content   String
   createdAt DateTime  @default(now())
+}
+
+model MonitorMetric {
+  id        String   @id @default(cuid())
+  type      String
+  name      String
+  value     Float
+  url       String
+  userAgent String   @default("")
+  sessionId String?
+  metadata  Json     @default("{}")
+  timestamp DateTime
+  createdAt DateTime @default(now())
+
+  @@index([type])
+  @@index([timestamp])
 }
