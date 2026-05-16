@@ -3,6 +3,7 @@ import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import "./globals.css";
+import "highlight.js/styles/github.css";
 
 export const metadata: Metadata = {
   title: "Sky Chat - AI 智能对话平台",

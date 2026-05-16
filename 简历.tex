@@ -1,0 +1,86 @@
+% !TEX TS-program = xelatex
+% !TEX encoding = UTF-8 Unicode
+% !Mode:: "TeX:UTF-8"
+
+\documentclass{resume}
+\usepackage{zh_CN-Adobefonts_external} % Simplified Chinese Support using external fonts (./fonts/zh_CN-Adobe/)
+%\usepackage{zh_CN-Adobefonts_internal} % Simplified Chinese Support using system fonts
+\usepackage{linespacing_fix} % disable extra space before next section
+\usepackage{cite}
+\geometry{top=0.6cm, bottom=0.6cm, left=1.1cm, right=1.1cm}
+\usepackage{enumitem}
+\setlist[itemize]{topsep=2pt, itemsep=2pt, parsep=0pt, partopsep=0pt}
+
+\renewcommand{\baselinestretch}{0.95}
+
+\begin{document}
+\pagenumbering{gobble} % suppress displaying page number
+
+\name{姜家旺}
+
+\basicInfo{
+  \email{573799893@QQ.com} \textperiodcentered\ 
+  \phone{(+86) 133-9006-6330} \textperiodcentered\ 
+  \faWechat\ jwww0910 \textperiodcentered\ 
+  男 / 2001.10
+  }
+ 
+\section{\faGraduationCap\  教育背景}
+\datedsubsection{\textbf{北京化工大学}, 北京}{2024.09 -- 2027.07}
+\textit{计算机技术}
+\datedsubsection{\textbf{大连工业大学}, 大连, 辽宁}{2020.09 -- 2024.07}
+\textit{网络工程}
+
+\section{\faUsers\ 实习/项目经历}
+\datedsubsection{\textbf{北京博华信智科技有限公司}}{2025.03 -- 2025.09}
+\role{前端实习生}{}
+负责 BHWebClient 的开发与维护。
+
+\datedsubsection{\textbf{BHWebClient（工业设备数据监测平台）}}{}
+\role{Vue.js / Vuex / ECharts / Webpack / Vue I18n}{}
+\textbf{项目描述}：工业设备运行状态实时监测与诊断分析平台，支持多种数据图谱的实时展示与交互分析，覆盖中/英/俄三语与深浅主题切换。
+
+\textbf{项目亮点}：
+\begin{itemize}
+  \item ECharts 原生标注不可拖拽、样式定制受限，基于 graphic 组件自建标注系统，利用 convertToPixel/convertFromPixel 建立数据坐标与像素坐标的双向映射，实现引线跟随拖拽、边界约束、右键编辑文字；图表缩放后通过比例重算（当前宽度/原始宽度）自动修正所有标注位置
+
+  \item 浏览器窗口缩放时，图表容器大小变化需重新计算尺寸。监听 ResizeObserver 事件触发 echarts.resize 重新绘制，结合防抖只在窗口变化结束后计算一次，避免频繁 resize 导致卡顿
+
+  \item 实时监测页面每隔几秒请求一次接口，切换页面后定时器仍在运行。结合 keep-alive 生命周期在页面激活时开启轮询、离开时清除定时器，避免无效请求消耗带宽与服务端资源
+\end{itemize}
+
+\datedsubsection{\textbf{Sky Chat — AI 智能对话平台}}{}
+\role{Next.js / TypeScript / SSE / Zustand / Prisma / PostgreSQL / ECharts}{}
+\textbf{项目描述}：全栈 AI 聊天应用，支持流式对话、联网搜索、图片生成、思考模式、文件上传、会话管理与对话分享，集成 SSE 性能监测模块与 ECharts 可视化后台。
+
+\textbf{项目亮点}：
+\begin{itemize}
+  \item \textbf{SSE 流式传输与状态管理}
+  \begin{itemize}
+    \item 针对 EventSource 无法携带 POST Body 与自定义 Header 的限制，基于 Fetch + ReadableStream 封装 SSE 解析层，设计类型化 Chunk 协议覆盖文本、推理、工具调用全生命周期
+    \item 设计有限状态机管理消息生命周期（thinking → tool\_calling → answering），SSE 事件驱动状态转换，解决多轮 Function Calling 场景下 UI 与流式消息状态不同步的问题
+  \end{itemize}
+
+  \item \textbf{渲染与性能优化}
+  \begin{itemize}
+    \item 引入 buffer 缓冲队列配合 requestAnimationFrame 批量刷新，解决流式 chunk 高频触发 setState 导致的冗余 re-render，渲染频次从峰值 120 次/秒降至 40 次/秒以下
+    \item 针对流式输出时富文本块高度突变引发的布局偏移，组合预留骨架高度、overflow-anchor 滚动锚定、未闭合 Markdown 块自动补全消除抖动
+    \item 基于 TanStack Virtual 实现虚拟滚动，配合动态行高估算与自动跟底策略保障长会话流畅渲染
+    \item 利用 RSC 将分享页面 Markdown 渲染移至服务端，降低客户端 JS 体积
+  \end{itemize}
+
+  \item \textbf{SSE 性能监控与可视化}
+  \begin{itemize}
+    \item 针对 AI 流式对话场景扩展指标体系：首字节时间(TTFB)、流式完成时间(TTLB)、卡顿检测(Stall)，填补传统 HTTP 请求监控盲区
+    \item 采用 sendBeacon + Fetch fallback 双通道上报解决页面卸载数据丢失，基于 IndexedDB 实现离线队列支持弱网重传
+    \item 管理后台基于 ECharts 搭建性能趋势折线图、卡顿分布柱状图与散点图，结合 P50/P90/P99 百分位统计与健康评分量化分析流式传输质量
+  \end{itemize}
+
+  \item \textbf{认证与安全}
+  \begin{itemize}
+    \item 用户凭证采用 JWT + HttpOnly Cookie 存储防止 XSS 窃取
+    \item 针对 AI 输出可能包含恶意 HTML 的风险，配置 rehype-sanitize 白名单过滤，防止 XSS 注入
+  \end{itemize}
+\end{itemize}
+
+\end{document}

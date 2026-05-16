@@ -14,7 +14,7 @@ export default async function AdminPage() {
     redirect("/chat");
   }
 
-  const [users, sessions, metrics] = await Promise.all([
+  const [users, sessions, ttfbMetrics, ttlbMetrics, stallMetrics, otherMetrics] = await Promise.all([
     prisma.user.findMany({
       orderBy: { createdAt: "desc" },
       include: { _count: { select: { sessions: true } } },
@@ -25,10 +25,28 @@ export default async function AdminPage() {
       take: 500,
     }),
     prisma.monitorMetric.findMany({
+      where: { type: "ttfb" },
+      orderBy: { timestamp: "desc" },
+      take: 1000,
+    }),
+    prisma.monitorMetric.findMany({
+      where: { type: "ttlb" },
+      orderBy: { timestamp: "desc" },
+      take: 1000,
+    }),
+    prisma.monitorMetric.findMany({
+      where: { type: "stall" },
       orderBy: { timestamp: "desc" },
       take: 500,
     }),
+    prisma.monitorMetric.findMany({
+      where: { type: { notIn: ["ttfb", "ttlb", "stall"] } },
+      orderBy: { timestamp: "desc" },
+      take: 200,
+    }),
   ]);
+
+  const metrics = [...ttfbMetrics, ...ttlbMetrics, ...stallMetrics, ...otherMetrics];
 
   const serializedUsers = users.map((u) => ({
     ...u,
@@ -46,6 +64,8 @@ export default async function AdminPage() {
     ...m,
     timestamp: m.timestamp.toISOString(),
     createdAt: m.createdAt.toISOString(),
+    userAgent: m.userAgent ?? '',
+    metadata: m.metadata as Record<string, unknown> | null,
   }));
 
   return (

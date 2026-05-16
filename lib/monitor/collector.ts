@@ -64,7 +64,7 @@ export class SSEPerformanceTracker {
     this.phaseStartTimes[phase] = now;
   }
 
-  async finish(): Promise<SSEMetric> {
+  async finish(): Promise<SSEMetric | null> {
     const now = performance.now();
     const currentPhase = Object.keys(this.phaseStartTimes).pop();
     if (currentPhase && !this.phaseDurations[currentPhase]) {
@@ -80,7 +80,7 @@ export class SSEPerformanceTracker {
       name: 'sse-ttfb',
       value: ttfb,
       timestamp: Date.now(),
-      url: this.options.url || window.location.href,
+      url: this.options.url || (typeof window !== 'undefined' ? window.location.href : ''),
       sessionId: this.options.sessionId,
       chunkCount: this.chunkCount,
       stallCount: this.stallCount,
@@ -88,7 +88,11 @@ export class SSEPerformanceTracker {
       phaseDurations: this.phaseDurations as SSEMetric['phaseDurations'],
     };
 
-    await addToQueue(metric);
+    try {
+      await addToQueue(metric);
+    } catch {
+      // metric silently dropped
+    }
 
     const ttlbMetric: SSEMetric = {
       id: `${this.metricId}-ttlb`,
@@ -96,14 +100,18 @@ export class SSEPerformanceTracker {
       name: 'sse-ttlb',
       value: ttlb,
       timestamp: Date.now(),
-      url: this.options.url || window.location.href,
+      url: this.options.url || (typeof window !== 'undefined' ? window.location.href : ''),
       sessionId: this.options.sessionId,
       chunkCount: this.chunkCount,
       stallCount: this.stallCount,
       stallDuration: this.totalStallDuration,
     };
 
-    await addToQueue(ttlbMetric);
+    try {
+      await addToQueue(ttlbMetric);
+    } catch {
+      // metric silently dropped
+    }
 
     if (this.stallCount > 0) {
       const stallMetric: SSEMetric = {
@@ -112,13 +120,17 @@ export class SSEPerformanceTracker {
         name: 'sse-stall',
         value: this.totalStallDuration,
         timestamp: Date.now(),
-        url: this.options.url || window.location.href,
+        url: this.options.url || (typeof window !== 'undefined' ? window.location.href : ''),
         sessionId: this.options.sessionId,
         chunkCount: this.chunkCount,
         stallCount: this.stallCount,
         stallDuration: this.totalStallDuration,
       };
-      await addToQueue(stallMetric);
+      try {
+        await addToQueue(stallMetric);
+      } catch {
+        // metric silently dropped
+      }
     }
 
     return metric;
@@ -199,57 +211,59 @@ export class WebVitalsCollector {
         }
       };
 
-      document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'hidden') {
-          reportCLS();
-        }
-      });
+      document.addEventListener('visibilitychange', reportCLS);
     } catch {
       // CLS observation not supported
     }
   }
 }
 
-let flushTimer: ReturnType<typeof setInterval> | null = null;
 const FLUSH_INTERVAL = 10000;
 const MAX_BATCH_SIZE = 20;
 
 export async function flushQueue(): Promise<void> {
-  const queue = await getQueue();
-  if (queue.length === 0) return;
+  try {
+    const queue = await getQueue();
+    if (queue.length === 0) return;
 
-  const batch = queue.slice(0, MAX_BATCH_SIZE);
-  const report = {
-    metrics: batch,
-    url: window.location.href,
-    userAgent: navigator.userAgent,
-    timestamp: Date.now(),
-  };
+    const batch = queue.slice(0, MAX_BATCH_SIZE);
+    const report = {
+      metrics: batch,
+      url: window.location.href,
+      userAgent: navigator.userAgent,
+      timestamp: Date.now(),
+    };
 
-  const success = await sendReport(report);
-  if (success) {
-    await clearQueue(batch.map((m) => m.id));
+    const success = await sendReport(report);
+    if (success) {
+      await clearQueue(batch.map((m) => m.id));
+    }
+  } catch (e) {
+    console.error('Failed to flush metrics queue:', e);
   }
 }
 
-export function startAutoFlush(): void {
-  if (flushTimer) return;
-  flushTimer = setInterval(flushQueue, FLUSH_INTERVAL);
+export function startAutoFlush(): { stop: () => void } {
+  const timer = setInterval(flushQueue, FLUSH_INTERVAL);
 
-  document.addEventListener('visibilitychange', () => {
+  const onVisibilityChange = () => {
     if (document.visibilityState === 'hidden') {
       flushQueue();
     }
-  });
+  };
 
-  window.addEventListener('beforeunload', () => {
+  const onBeforeUnload = () => {
     flushQueue();
-  });
-}
+  };
 
-export function stopAutoFlush(): void {
-  if (flushTimer) {
-    clearInterval(flushTimer);
-    flushTimer = null;
-  }
+  document.addEventListener('visibilitychange', onVisibilityChange);
+  window.addEventListener('beforeunload', onBeforeUnload);
+
+  return {
+    stop: () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('beforeunload', onBeforeUnload);
+    },
+  };
 }

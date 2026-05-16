@@ -2,9 +2,19 @@ import { SignJWT, jwtVerify } from 'jose';
 import bcrypt from 'bcryptjs';
 import { cookies } from 'next/headers';
 
+const RAW_JWT_SECRET = process.env.JWT_SECRET;
 const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || 'sky-chat-secret-key-change-in-production'
+  RAW_JWT_SECRET || 'sky-chat-secret-key-change-in-production'
 );
+
+function isJWTConfigured(): boolean {
+  if (RAW_JWT_SECRET) return true;
+  if (process.env.NODE_ENV === 'production') {
+    console.error('JWT_SECRET is not configured in production environment');
+    return false;
+  }
+  return true;
+}
 
 const COOKIE_NAME = 'sky-chat-token';
 
@@ -24,7 +34,8 @@ export interface JWTPayload {
   role: string;
 }
 
-export async function signToken(payload: JWTPayload): Promise<string> {
+export async function signToken(payload: JWTPayload): Promise<string | null> {
+  if (!isJWTConfigured()) return null;
   return new SignJWT({ ...payload })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
@@ -33,6 +44,7 @@ export async function signToken(payload: JWTPayload): Promise<string> {
 }
 
 export async function verifyToken(token: string): Promise<JWTPayload | null> {
+  if (!isJWTConfigured()) return null;
   try {
     const { payload } = await jwtVerify(token, JWT_SECRET);
     return {

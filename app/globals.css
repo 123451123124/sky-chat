@@ -156,6 +156,17 @@
     100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
   }
 
+  @keyframes caret-blink {
+    0%, 40% { opacity: 1; }
+    50%, 90% { opacity: 0; }
+    100% { opacity: 1; }
+  }
+
+  @keyframes thinking-dot {
+    0%, 40% { transform: translateY(0); }
+    20% { transform: translateY(-4px); }
+  }
+
   .animate-fade-in-up {
     animation: fade-in-up 0.3s ease-out;
   }
@@ -172,6 +183,14 @@
     animation: pulse-dot 1.4s ease-in-out infinite;
   }
 
+  .animate-caret {
+    animation: caret-blink 1s ease-in-out infinite;
+  }
+
+  .animate-thinking-dot {
+    animation: thinking-dot 1.2s ease-in-out infinite;
+  }
+
   .animate-scroll-pulse {
     animation: scroll-pulse 2s infinite;
   }
@@ -183,4 +202,43 @@
   .markdown-body.streaming :where(p, li, h1, h2, h3, h4) {
     overflow-anchor: auto;
   }
+}
+
+/* Dark mode syntax highlighting — override github.css light theme */
+.dark .hljs-keyword,
+.dark .hljs-literal,
+.dark .hljs-symbol { color: #ff7b72; }
+
+.dark .hljs-string,
+.dark .hljs-doctag { color: #a5d6ff; }
+
+.dark .hljs-comment,
+.dark .hljs-quote { color: #8b949e; font-style: italic; }
+
+.dark .hljs-number,
+.dark .hljs-attr { color: #ffa657; }
+
+.dark .hljs-title,
+.dark .hljs-title.class_,
+.dark .hljs-title.function_ { color: #d2a8ff; }
+
+.dark .hljs-built_in,
+.dark .hljs-type { color: #79c0ff; }
+
+.dark .hljs-meta { color: #8b949e; }
+
+.dark .hljs-deletion { background: #ffdcd7; }
+.dark .hljs-addition { background: #aff5b4; }
+
+.dark .hljs-variable { color: #ffa657; }
+
+.dark .hljs-strong { font-weight: bold; }
+.dark .hljs-emphasis { font-style: italic; }
+
+/* Override highlight.js theme .hljs background/padding inside markdown code blocks */
+.markdown-body pre .hljs {
+  background: transparent !important;
+  padding: 0 !important;
+  display: inline;
+  overflow-x: visible;
 }

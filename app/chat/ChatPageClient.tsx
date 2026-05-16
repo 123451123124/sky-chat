@@ -29,21 +29,24 @@ function isTempId(id: string) {
 
 export function ChatPageClient({ initialSessions, user }: ChatPageClientProps) {
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  const [chatKey, setChatKey] = useState<string>(`temp_${Date.now()}`);
   const [sessions, setSessions] = useState<Session[]>(initialSessions);
   const setMessages = useChatStore((s) => s.setMessages);
   const reset = useChatStore((s) => s.reset);
 
   const handleNewSession = useCallback(() => {
-    // Create a temp session; ChatContainer shows welcome screen until first message
     const tempId = `temp_${Date.now()}`;
     setCurrentSessionId(tempId);
+    setChatKey(tempId);        // force remount for genuinely new chat
     setMessages([]);
     reset();
   }, [setMessages, reset]);
 
   const handleSelectSession = useCallback((id: string) => {
+    reset();
     setCurrentSessionId(id);
-  }, []);
+    setChatKey(id);            // force remount to load different session
+  }, [reset]);
 
   const handleDeleteSession = useCallback((id: string) => {
     if (isTempId(id)) {
@@ -61,6 +64,7 @@ export function ChatPageClient({ initialSessions, user }: ChatPageClientProps) {
 
   const handleSessionCreated = useCallback((newSession: { id: string; title: string; updatedAt: string; _count?: { messages: number } }) => {
     setSessions((prev) => [newSession as Session, ...prev]);
+    // Only update currentSessionId, NOT chatKey — keeps ChatContainer alive without remount
     setCurrentSessionId(newSession.id);
   }, []);
 
@@ -87,7 +91,7 @@ export function ChatPageClient({ initialSessions, user }: ChatPageClientProps) {
       />
       <main className="flex-1 flex flex-col min-w-0">
         <ChatContainer
-          key={effectiveSessionId}
+          key={chatKey}
           sessionId={effectiveSessionId}
           isNewSession={isNew}
           onSessionCreated={handleSessionCreated}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useEffect, useCallback, useState } from "react";
+import { useRef, useEffect, useLayoutEffect, useCallback, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { Message, MessagePart } from "@/store/useChatStore";
 import { MessagePartRenderer, StreamingSkeleton } from "./MarkdownRenderer";
@@ -53,7 +53,7 @@ function MessageBubble({ message, onRegenerate, canRegenerate, onBranch, index }
   if (isUser) {
     return (
       <div className="flex justify-end gap-3 animate-fade-in-up relative group">
-        <div className="max-w-[70%] rounded-2xl px-4 py-3 bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100">
+        <div className="max-w-[70%] rounded-2xl px-4 py-3 bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm">
           <p className="whitespace-pre-wrap text-sm leading-relaxed">{message.content}</p>
         </div>
       </div>
@@ -65,13 +65,13 @@ function MessageBubble({ message, onRegenerate, canRegenerate, onBranch, index }
   return (
     <div className="flex justify-start gap-3 animate-fade-in-up relative group">
       <div className="flex-shrink-0 mt-1">
-        <div className="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center">
+        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-gray-200 to-gray-300 dark:from-gray-600 dark:to-gray-700 flex items-center justify-center shadow-sm">
           <svg className="w-4 h-4 text-gray-600 dark:text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
           </svg>
         </div>
       </div>
-      <div className="group/message min-w-0">
+      <div className="group/message min-w-0 max-w-[calc(100%-3rem)]">
         <div className="text-gray-900 dark:text-gray-100">
           {!hasContent && <StreamingSkeleton />}
           {message.parts.length > 0 ? (
@@ -118,6 +118,9 @@ export function MessageList({ messages, onRegenerate, canRegenerate, onBranch }:
   const [showScrollButton, setShowScrollButton] = useState(false);
   const isUserScrolledUp = useRef(false);
 
+  const isFirstScroll = useRef(true);
+  const isFirstScrollSettled = useRef(false);
+
   const virtualizer = useVirtualizer({
     count: messages.length,
     getScrollElement: () => parentRef.current,
@@ -125,16 +128,21 @@ export function MessageList({ messages, onRegenerate, canRegenerate, onBranch }:
       const msg = messages[index];
       if (msg.role === 'user') return 60;
       const contentLen = msg.content.length;
-      if (contentLen < 50) return 80;
-      if (contentLen < 200) return 120;
-      if (contentLen < 500) return 180;
-      return 280;
+      if (contentLen < 50) return 100;
+      if (contentLen < 200) return 160;
+      if (contentLen < 500) return 280;
+      return 400;
     },
     overscan: 5,
   });
 
-  const scrollToBottom = useCallback(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  const scrollToBottom = useCallback((instant = false) => {
+    if (instant) {
+      const el = parentRef.current;
+      if (el) el.scrollTop = el.scrollHeight;
+    } else {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
     isUserScrolledUp.current = false;
     setShowScrollButton(false);
   }, []);
@@ -148,10 +156,26 @@ export function MessageList({ messages, onRegenerate, canRegenerate, onBranch }:
     setShowScrollButton(!atBottom);
   }, []);
 
+  // First scroll: useLayoutEffect runs synchronously before paint → no visible flash
+  useLayoutEffect(() => {
+    if (messages.length === 0) return;
+    if (!isFirstScroll.current) return;
+    isFirstScroll.current = false;
+
+    scrollToBottom(true);
+    // Re-scroll after virtualizer measures actual element sizes
+    requestAnimationFrame(() => {
+      scrollToBottom(true);
+      isFirstScrollSettled.current = true;
+    });
+  }, [messages, scrollToBottom]);
+
+  // Streaming scroll: useEffect runs after paint, fine for incremental content
   useEffect(() => {
-    if (messages.length > 0 && !isUserScrolledUp.current) {
-      scrollToBottom();
-    }
+    if (messages.length === 0) return;
+    if (!isFirstScrollSettled.current) return; // first scroll not yet settled
+    if (isUserScrolledUp.current) return;
+    scrollToBottom();
   }, [messages, scrollToBottom]);
 
   if (messages.length === 0) return null;
@@ -164,7 +188,7 @@ export function MessageList({ messages, onRegenerate, canRegenerate, onBranch }:
         className="absolute inset-0 overflow-y-auto"
         style={{ overflowAnchor: 'auto' }}
       >
-        <div className="max-w-3xl mx-auto py-6 px-4 lg:px-6">
+        <div className="max-w-3xl mx-auto py-4 px-4 lg:px-6">
           <div
             style={{
               height: `${virtualizer.getTotalSize()}px`,
@@ -187,7 +211,7 @@ export function MessageList({ messages, onRegenerate, canRegenerate, onBranch }:
                   data-index={virtualItem.index}
                   ref={virtualizer.measureElement}
                 >
-                  <div className="py-3 px-2">
+                  <div className="py-2 px-2">
                     <MessageBubble
                       message={message}
                       onRegenerate={onRegenerate}

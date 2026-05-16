@@ -17,6 +17,8 @@ export async function POST(request: NextRequest) {
     }
 
     for (const metric of metrics) {
+      const clientId = metric.id || null;
+      const baseId = clientId ? clientId.replace(/-(ttlb|stall)$/, '') : null;
       await prisma.monitorMetric.create({
         data: {
           type: metric.type,
@@ -25,7 +27,7 @@ export async function POST(request: NextRequest) {
           url: url || "",
           userAgent: userAgent || "",
           sessionId: metric.sessionId || null,
-          metadata: metric.metadata || {},
+          metadata: { ...(metric.metadata || {}), _requestId: baseId },
           timestamp: new Date(timestamp || Date.now()),
         },
       });

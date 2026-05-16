@@ -35,6 +35,7 @@ model Message {
   session   Session   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   role      String
   content   String
+  parts     Json?     // Structured message parts: reasoning, tool calls, etc.
   createdAt DateTime  @default(now())
 }
 

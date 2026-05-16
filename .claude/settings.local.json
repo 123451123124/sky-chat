@@ -9,7 +9,12 @@
       "Bash(nslookup *)",
       "Bash(curl *)",
       "Bash(npm install *)",
-      "Bash(node *)"
+      "Bash(node *)",
+      "Bash(npx tsc *)",
+      "Bash(Get-ChildItem -Recurse -Depth 0 -Name)",
+      "Bash(Sort-Object)",
+      "Bash(Select-Object -First 50)",
+      "PowerShell(npm run *)"
     ]
   }
 }

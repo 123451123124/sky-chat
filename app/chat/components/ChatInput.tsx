@@ -100,12 +100,36 @@ export function ChatInput({ onSend, disabled, placeholder, centered }: ChatInput
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = e.target.files?.[0];
     if (!selected) return;
-    if (selected.type !== 'application/pdf') {
-      setFileError('仅支持 PDF 文件');
+
+    const ext = selected.name.split('.').pop()?.toLowerCase() || '';
+    const supportedTypes = [
+      'application/pdf',
+      'text/plain', 'text/csv', 'text/html', 'text/css', 'text/javascript',
+      'application/json', 'application/xml', 'text/xml',
+      'image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/bmp', 'image/svg+xml',
+    ];
+    const supportedExts = [
+      'pdf',
+      'txt', 'md', 'csv', 'json', 'xml', 'yaml', 'yml',
+      'js', 'jsx', 'ts', 'tsx', 'py', 'rb', 'go', 'rs', 'java', 'c', 'cpp', 'h',
+      'html', 'htm', 'css', 'scss', 'less',
+      'sh', 'bash', 'ps1', 'sql',
+      'toml', 'ini', 'cfg', 'env',
+      'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg',
+    ];
+
+    const isSupported =
+      supportedTypes.some((t) => selected.type === t || selected.type.startsWith(t + ';')) ||
+      supportedExts.includes(ext);
+
+    if (!isSupported) {
+      setFileError(`不支持的文件类型: ${ext || selected.type}`);
       return;
     }
-    if (selected.size > 10 * 1024 * 1024) {
-      setFileError('文件大小超过 10MB 限制');
+
+    const maxSize = selected.type.startsWith('image/') ? 5 * 1024 * 1024 : 10 * 1024 * 1024;
+    if (selected.size > maxSize) {
+      setFileError(`文件大小超过 ${maxSize / 1024 / 1024}MB 限制`);
       return;
     }
     setFile(selected);
@@ -150,7 +174,7 @@ export function ChatInput({ onSend, disabled, placeholder, centered }: ChatInput
           onClick={() => fileInputRef.current?.click()}
           disabled={disabled || uploading}
           className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 disabled:opacity-30 transition-colors self-end"
-          title="上传 PDF"
+          title="上传文件"
         >
           <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
@@ -159,7 +183,7 @@ export function ChatInput({ onSend, disabled, placeholder, centered }: ChatInput
         <input
           ref={fileInputRef}
           type="file"
-          accept=".pdf,application/pdf"
+          accept=".pdf,.txt,.md,.csv,.json,.xml,.yaml,.yml,.js,.jsx,.ts,.tsx,.py,.rb,.go,.rs,.java,.c,.cpp,.h,.html,.htm,.css,.scss,.less,.sh,.bash,.ps1,.sql,.toml,.ini,.cfg,.env,.png,.jpg,.jpeg,.gif,.webp,.bmp,.svg,application/pdf,text/*,image/*"
           onChange={handleFileSelect}
           className="hidden"
         />
@@ -190,7 +214,7 @@ export function ChatInput({ onSend, disabled, placeholder, centered }: ChatInput
   if (centered) {
     return (
       <div className="w-full max-w-2xl mx-auto">
-        <div className="bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl shadow-sm focus-within:border-gray-400 dark:focus-within:border-gray-500 focus-within:ring-1 focus-within:ring-gray-400/20 transition-all">
+        <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-xl shadow-sm focus-within:border-gray-400 dark:focus-within:border-gray-500 focus-within:ring-2 focus-within:ring-gray-400/15 dark:focus-within:ring-gray-500/20 transition-all">
           {inputContent}
         </div>
         <p className="text-xs text-gray-400 text-center mt-2">AI 回复仅供参考</p>
@@ -199,9 +223,9 @@ export function ChatInput({ onSend, disabled, placeholder, centered }: ChatInput
   }
 
   return (
-    <div className="border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-3 lg:p-4">
+    <div className="border-t border-gray-200 dark:border-gray-700/50 bg-white dark:bg-gray-900 p-3 lg:p-4">
       <div className="max-w-3xl mx-auto">
-        <div className="bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl shadow-sm focus-within:border-gray-400 dark:focus-within:border-gray-500 focus-within:ring-1 focus-within:ring-gray-400/20 transition-all">
+        <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-xl shadow-sm focus-within:border-gray-400 dark:focus-within:border-gray-500 focus-within:ring-2 focus-within:ring-gray-400/15 dark:focus-within:ring-gray-500/20 transition-all">
           {inputContent}
         </div>
         <p className="text-xs text-gray-400 text-center mt-2">AI 回复仅供参考</p>

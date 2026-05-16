@@ -1,11 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { jwtVerify } from 'jose';
 
+const RAW_JWT_SECRET = process.env.JWT_SECRET;
 const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || 'sky-chat-secret-key-change-in-production'
+  RAW_JWT_SECRET || 'sky-chat-secret-key-change-in-production'
 );
 
 async function verifyTokenFromRequest(request: NextRequest) {
+  // In production, JWT_SECRET must be explicitly set, or all requests are denied
+  if (!RAW_JWT_SECRET && process.env.NODE_ENV === 'production') {
+    console.error('JWT_SECRET is not configured in production environment');
+    return null;
+  }
+
   const token = request.cookies.get('sky-chat-token')?.value;
   if (!token) return null;
 

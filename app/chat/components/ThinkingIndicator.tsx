@@ -9,11 +9,11 @@ export function ThinkingIndicator() {
   return (
     <div className="px-4 py-2">
       {status === 'thinking' && (
-        <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400">
+        <div className="flex items-center gap-3 text-gray-500 dark:text-gray-400">
           <div className="flex gap-1">
-            <span className="w-2 h-2 bg-gray-400 dark:bg-gray-500 rounded-full animate-pulse-dot" style={{ animationDelay: '0s' }} />
-            <span className="w-2 h-2 bg-gray-400 dark:bg-gray-500 rounded-full animate-pulse-dot" style={{ animationDelay: '0.2s' }} />
-            <span className="w-2 h-2 bg-gray-400 dark:bg-gray-500 rounded-full animate-pulse-dot" style={{ animationDelay: '0.4s' }} />
+            <span className="w-2 h-2 bg-gray-400 dark:bg-gray-500 rounded-full animate-thinking-dot" style={{ animationDelay: '0s' }} />
+            <span className="w-2 h-2 bg-gray-400 dark:bg-gray-500 rounded-full animate-thinking-dot" style={{ animationDelay: '0.3s' }} />
+            <span className="w-2 h-2 bg-gray-400 dark:bg-gray-500 rounded-full animate-thinking-dot" style={{ animationDelay: '0.6s' }} />
           </div>
           <span className="text-sm">正在思考...</span>
         </div>
@@ -28,7 +28,12 @@ export function ThinkingIndicator() {
         </div>
       )}
       {status === 'answering' && (
-        <div className="flex items-center gap-2 text-gray-400 dark:text-gray-500">
+        <div className="flex items-center gap-3 text-gray-400 dark:text-gray-500">
+          <div className="flex gap-1">
+            <span className="w-2 h-2 bg-gray-400 dark:bg-gray-500 rounded-full animate-thinking-dot opacity-60" style={{ animationDelay: '0s' }} />
+            <span className="w-2 h-2 bg-gray-400 dark:bg-gray-500 rounded-full animate-thinking-dot opacity-60" style={{ animationDelay: '0.3s' }} />
+            <span className="w-2 h-2 bg-gray-400 dark:bg-gray-500 rounded-full animate-thinking-dot opacity-60" style={{ animationDelay: '0.6s' }} />
+          </div>
           <span className="text-sm">正在回复...</span>
         </div>
       )}

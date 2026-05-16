@@ -11,7 +11,7 @@ import { SSEParser } from "@/lib/sse-parser";
 import { parseAIStreamChunk, handleStreamChunk, type StreamCallbacks } from "@/lib/ai-stream";
 import { StreamBuffer } from "@/lib/stream-buffer";
 import { SSEPerformanceTracker, startAutoFlush } from "@/lib/monitor";
-import type { Message } from "@/store/useChatStore";
+import type { Message, MessagePart } from "@/store/useChatStore";
 
 interface SessionData {
   id: string;
@@ -26,17 +26,19 @@ interface ChatContainerProps {
   onSessionCreated?: (session: SessionData) => void;
 }
 
-const AVAILABLE_MODELS = [
-  { id: 'gpt-4o', name: 'GPT-4o' },
-  { id: 'gpt-4o-mini', name: 'GPT-4o Mini' },
-  { id: 'gpt-4.1', name: 'GPT-4.1' },
-];
+import { ALLOWED_MODELS, DEFAULT_MODEL } from "@/lib/models";
 
 const STORAGE_KEY = 'sky-chat-model';
+const SEARCH_STORAGE_KEY = 'sky-chat-search';
 
 function getSavedModel(): string {
-  if (typeof window === 'undefined') return 'gpt-4o';
-  return localStorage.getItem(STORAGE_KEY) || 'gpt-4o';
+  if (typeof window === 'undefined') return DEFAULT_MODEL;
+  return localStorage.getItem(STORAGE_KEY) || DEFAULT_MODEL;
+}
+
+function getSavedSearchEnabled(): boolean {
+  if (typeof window === 'undefined') return false;
+  return localStorage.getItem(SEARCH_STORAGE_KEY) === 'true';
 }
 
 export function ChatContainer({ sessionId, isNewSession, onSessionCreated }: ChatContainerProps) {
@@ -47,10 +49,11 @@ export function ChatContainer({ sessionId, isNewSession, onSessionCreated }: Cha
   const setMessages = useChatStore((s) => s.setMessages);
   const addMessage = useChatStore((s) => s.addMessage);
   const startAssistantMessage = useChatStore((s) => s.startAssistantMessage);
-  const appendTextDelta = useChatStore((s) => s.appendTextDelta);
+  const appendTextToMessage = useChatStore((s) => s.appendTextToMessage);
   const addReasoningPart = useChatStore((s) => s.addReasoningPart);
   const appendReasoningDelta = useChatStore((s) => s.appendReasoningDelta);
   const addToolPart = useChatStore((s) => s.addToolPart);
+  const updateToolInput = useChatStore((s) => s.updateToolInput);
   const updateToolOutput = useChatStore((s) => s.updateToolOutput);
   const updateToolError = useChatStore((s) => s.updateToolError);
   const finalizeCurrentMessage = useChatStore((s) => s.finalizeCurrentMessage);
@@ -59,15 +62,25 @@ export function ChatContainer({ sessionId, isNewSession, onSessionCreated }: Cha
   const bufferRef = useRef<StreamBuffer | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const sseTrackerRef = useRef<SSEPerformanceTracker | null>(null);
+  const toolInputBufRef = useRef<Map<string, string>>(new Map());
   const [shareToast, setShareToast] = useState<string | null>(null);
   const persistedSessionId = useRef<string | null>(null);
-  const [model, setModel] = useState(getSavedModel);
+  const [model, setModel] = useState(DEFAULT_MODEL);
   const [showModelPicker, setShowModelPicker] = useState(false);
   const modelPickerRef = useRef<HTMLDivElement>(null);
+  const [searchEnabled, setSearchEnabled] = useState(false);
+  const [showSearchHistory, setShowSearchHistory] = useState(false);
+  const searchHistoryRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    startAutoFlush();
+    setModel(getSavedModel());
+    setSearchEnabled(getSavedSearchEnabled());
+  }, []);
+
+  useEffect(() => {
+    const flush = startAutoFlush();
     return () => {
+      flush.stop();
       bufferRef.current?.destroy();
       abortControllerRef.current?.abort();
     };
@@ -76,37 +89,53 @@ export function ChatContainer({ sessionId, isNewSession, onSessionCreated }: Cha
   // Load messages for persisted sessions
   useEffect(() => {
     if (!sessionId || isNewSession) return;
+    // Store already has messages from streaming (temp→real transition), skip re-fetch
+    if (messages.length > 0) return;
     fetch(`/api/message?sessionId=${sessionId}`)
       .then((res) => res.json())
-      .then((data: Array<{ id: string; role: string; content: string }>) => {
-        const msgs: Message[] = data.map((m) => ({
-          id: m.id,
-          role: m.role as 'user' | 'assistant',
-          content: m.content,
-          parts: m.role === 'assistant'
-            ? [{ type: 'text' as const, text: m.content, state: 'done' as const }]
-            : [],
-        }));
+      .then((data: Array<{ id: string; role: string; content: string; parts?: MessagePart[] | null }>) => {
+        const msgs: Message[] = data.map((m) => {
+          // Use persisted parts if available, otherwise recreate from content (backwards compat)
+          if (m.parts && m.parts.length > 0) {
+            return {
+              id: m.id,
+              role: m.role as 'user' | 'assistant',
+              content: m.content,
+              parts: m.parts as MessagePart[],
+            };
+          }
+          return {
+            id: m.id,
+            role: m.role as 'user' | 'assistant',
+            content: m.content,
+            parts: m.role === 'assistant'
+              ? [{ type: 'text' as const, text: m.content, state: 'done' as const }]
+              : [],
+          };
+        });
         setMessages(msgs);
       });
-  }, [sessionId, isNewSession, setMessages]);
+  }, [sessionId, isNewSession, setMessages, messages.length]);
 
   // Reset ref when switching sessions
   useEffect(() => {
     persistedSessionId.current = null;
   }, [sessionId]);
 
-  // Close model picker on outside click
+  // Close model picker / search history on outside click
   useEffect(() => {
-    if (!showModelPicker) return;
+    if (!showModelPicker && !showSearchHistory) return;
     const handler = (e: MouseEvent) => {
-      if (modelPickerRef.current && !modelPickerRef.current.contains(e.target as Node)) {
+      if (showModelPicker && modelPickerRef.current && !modelPickerRef.current.contains(e.target as Node)) {
         setShowModelPicker(false);
+      }
+      if (showSearchHistory && searchHistoryRef.current && !searchHistoryRef.current.contains(e.target as Node)) {
+        setShowSearchHistory(false);
       }
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
-  }, [showModelPicker]);
+  }, [showModelPicker, showSearchHistory]);
 
   const handleModelChange = useCallback((newModel: string) => {
     setModel(newModel);
@@ -114,21 +143,33 @@ export function ChatContainer({ sessionId, isNewSession, onSessionCreated }: Cha
     setShowModelPicker(false);
   }, []);
 
-  const saveMessage = useCallback(async (sid: string, role: "user" | "assistant", content: string) => {
-    await fetch("/api/message", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionId: sid, role, content }),
+  const handleSearchToggle = useCallback(() => {
+    setSearchEnabled((prev) => {
+      const next = !prev;
+      localStorage.setItem(SEARCH_STORAGE_KEY, next.toString());
+      return next;
     });
   }, []);
 
-  const createSessionAndSave = useCallback(async (msgs: { role: string; content: string }[]) => {
+  const saveMessage = useCallback(async (sid: string, role: "user" | "assistant", content: string, parts?: MessagePart[]) => {
+    await fetch("/api/message", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId: sid, role, content, parts }),
+    });
+  }, []);
+
+  const createSessionAndSave = useCallback(async (msgs: { role: string; content: string; parts?: MessagePart[] }[]) => {
     const title = msgs[0]?.content?.slice(0, 50) || "新对话";
     const res = await fetch("/api/session", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ title, messages: msgs }),
     });
+    if (!res.ok) {
+      const errorData = await res.json().catch(() => ({}));
+      throw new Error(errorData.error || `Session create failed: ${res.status}`);
+    }
     return await res.json();
   }, []);
 
@@ -137,6 +178,7 @@ export function ChatContainer({ sessionId, isNewSession, onSessionCreated }: Cha
     assistantId: string,
     firstUserContent: string,
     currentModel: string,
+    searchEnabled: boolean,
   ) => {
     const effectiveSessionId = persistedSessionId.current || sessionId;
     const tracker = new SSEPerformanceTracker({ sessionId: effectiveSessionId });
@@ -147,7 +189,8 @@ export function ChatContainer({ sessionId, isNewSession, onSessionCreated }: Cha
     bufferRef.current = buffer;
 
     buffer.onFlush((combinedDelta) => {
-      appendTextDelta(combinedDelta);
+      // 直接按消息 ID 追加，不依赖 currentAssistantId
+      appendTextToMessage(assistantId, combinedDelta);
     });
 
     const abortController = new AbortController();
@@ -170,9 +213,17 @@ export function ChatContainer({ sessionId, isNewSession, onSessionCreated }: Cha
         setStatus('tool_calling');
         tracker.onPhaseChange('tool_calling');
         addToolPart({ toolCallId, toolName, state: 'input-streaming' });
+        toolInputBufRef.current.set(toolCallId, '');
+      },
+      onToolInputDelta: (toolCallId, delta) => {
+        const buf = toolInputBufRef.current;
+        const acc = (buf.get(toolCallId) || '') + delta;
+        buf.set(toolCallId, acc);
+        updateToolInput(toolCallId, acc, 'input-streaming');
       },
       onToolInputAvailable: (toolCallId, toolName, input) => {
-        addToolPart({ toolCallId, toolName, input, state: 'input-available' });
+        toolInputBufRef.current.delete(toolCallId);
+        updateToolInput(toolCallId, input, 'input-available');
       },
       onToolOutputAvailable: (toolCallId, output) => {
         updateToolOutput(toolCallId, output);
@@ -182,7 +233,11 @@ export function ChatContainer({ sessionId, isNewSession, onSessionCreated }: Cha
         updateToolError(toolCallId, errorText);
         setStatus('answering');
       },
-      onStepStart: () => {},
+      onStepStart: () => {
+        // 确保当前消息的状态正确，为下一步文本做准备
+        // 不创建新消息，所有文本合并到同一条消息
+        buffer.forceFlush();
+      },
       onFinish: async () => {
         buffer.forceFlush();
         finalizeCurrentMessage();
@@ -192,11 +247,13 @@ export function ChatContainer({ sessionId, isNewSession, onSessionCreated }: Cha
         const assistantMsg = state.messages.find((m) => m.id === assistantId);
         if (!assistantMsg) { tracker.finish(); return; }
 
+        const persistableParts = assistantMsg.parts.filter(p => p.type !== 'step-start');
+
         if (isNewSession && !persistedSessionId.current) {
           try {
             const session = await createSessionAndSave([
               { role: 'user', content: firstUserContent },
-              { role: 'assistant', content: assistantMsg.content },
+              { role: 'assistant', content: assistantMsg.content, parts: persistableParts },
             ]);
             persistedSessionId.current = session.id;
             onSessionCreated?.({
@@ -210,7 +267,7 @@ export function ChatContainer({ sessionId, isNewSession, onSessionCreated }: Cha
           }
         } else {
           const sid = persistedSessionId.current || sessionId;
-          await saveMessage(sid, "assistant", assistantMsg.content);
+          await saveMessage(sid, "assistant", assistantMsg.content, persistableParts);
         }
         tracker.finish();
         sseTrackerRef.current = null;
@@ -234,6 +291,7 @@ export function ChatContainer({ sessionId, isNewSession, onSessionCreated }: Cha
         body: JSON.stringify({
           messages: apiMessages,
           model: currentModel,
+          searchEnabled,
         }),
         signal: abortController.signal,
       });
@@ -268,10 +326,10 @@ export function ChatContainer({ sessionId, isNewSession, onSessionCreated }: Cha
       abortControllerRef.current = null;
     }
   }, [
-    sessionId, isNewSession, onSessionCreated,
+    sessionId, isNewSession, onSessionCreated, searchEnabled,
     setStatus, setError, startAssistantMessage,
-    appendTextDelta, addReasoningPart, appendReasoningDelta, addToolPart,
-    updateToolOutput, updateToolError, finalizeCurrentMessage, reset,
+    appendTextToMessage, addReasoningPart, appendReasoningDelta, addToolPart,
+    updateToolInput, updateToolOutput, updateToolError, finalizeCurrentMessage, reset,
     saveMessage, createSessionAndSave,
   ]);
 
@@ -292,11 +350,14 @@ export function ChatContainer({ sessionId, isNewSession, onSessionCreated }: Cha
     };
 
     if (!isNewSession || persistedSessionId.current) {
+      // Save after adding to store so user sees message immediately
+      addMessage(userMessage);
+      setStatus('thinking');
       await saveMessage(effectiveId, "user", userMessage.content);
+    } else {
+      addMessage(userMessage);
+      setStatus('thinking');
     }
-
-    addMessage(userMessage);
-    setStatus('thinking');
 
     const assistantId = (Date.now() + 1).toString();
     startAssistantMessage(assistantId);
@@ -314,10 +375,10 @@ export function ChatContainer({ sessionId, isNewSession, onSessionCreated }: Cha
       apiMessages.push({ role: 'user', content: apiUserContent });
     }
 
-    await streamRequest(apiMessages, assistantId, apiUserContent, model);
+    await streamRequest(apiMessages, assistantId, apiUserContent, model, searchEnabled);
   }, [
     isNewSession, sessionId, addMessage, saveMessage,
-    setStatus, startAssistantMessage, streamRequest, model,
+    setStatus, startAssistantMessage, streamRequest, model, searchEnabled,
   ]);
 
   const handleRegenerate = useCallback(async () => {
@@ -337,8 +398,8 @@ export function ChatContainer({ sessionId, isNewSession, onSessionCreated }: Cha
       .filter((m) => m.role === 'user' || (m.role === 'assistant' && m.content))
       .map((m) => ({ role: m.role, content: m.content }));
 
-    await streamRequest(apiMessages, assistantId, msgs[lastUserIdx]?.content || "", model);
-  }, [setMessages, setStatus, startAssistantMessage, streamRequest, model]);
+    await streamRequest(apiMessages, assistantId, msgs[lastUserIdx]?.content || "", model, searchEnabled);
+  }, [setMessages, setStatus, startAssistantMessage, streamRequest, model, searchEnabled]);
 
   const handleBranch = useCallback((messageIndex: number) => {
     const state = useChatStore.getState();
@@ -395,11 +456,11 @@ export function ChatContainer({ sessionId, isNewSession, onSessionCreated }: Cha
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
               </svg>
-              {AVAILABLE_MODELS.find(m => m.id === model)?.name || model}
+              {ALLOWED_MODELS.find(m => m.id === model)?.name || model}
             </button>
             {showModelPicker && (
               <div className="absolute top-full left-0 mt-1 w-44 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-50 py-1">
-                {AVAILABLE_MODELS.map((m) => (
+                {ALLOWED_MODELS.map((m) => (
                   <button
                     key={m.id}
                     onClick={() => handleModelChange(m.id)}
@@ -415,6 +476,20 @@ export function ChatContainer({ sessionId, isNewSession, onSessionCreated }: Cha
               </div>
             )}
           </div>
+                    <button
+            onClick={handleSearchToggle}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg transition-colors ${
+              searchEnabled
+                ? 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30'
+                : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'
+            }`}
+            title={searchEnabled ? '搜索已开启' : '搜索已关闭'}
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z" />
+            </svg>
+            <span>搜索</span>
+          </button>
           <ThemeToggle />
         </div>
 
@@ -452,11 +527,11 @@ export function ChatContainer({ sessionId, isNewSession, onSessionCreated }: Cha
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
             </svg>
-            {AVAILABLE_MODELS.find(m => m.id === model)?.name || model}
+            {ALLOWED_MODELS.find(m => m.id === model)?.name || model}
           </button>
           {showModelPicker && (
             <div className="absolute top-full left-0 mt-1 w-44 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-50 py-1">
-              {AVAILABLE_MODELS.map((m) => (
+              {ALLOWED_MODELS.map((m) => (
                 <button
                   key={m.id}
                   onClick={() => handleModelChange(m.id)}
@@ -474,7 +549,68 @@ export function ChatContainer({ sessionId, isNewSession, onSessionCreated }: Cha
         </div>
 
         <div className="flex items-center gap-1">
+                    <button
+            onClick={handleSearchToggle}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg transition-colors ${
+              searchEnabled
+                ? 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30'
+                : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'
+            }`}
+            title={searchEnabled ? '搜索已开启' : '搜索已关闭'}
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z" />
+            </svg>
+            <span>搜索</span>
+          </button>
           <ThemeToggle />
+          {messages.length > 0 && (() => {
+            const searches: Array<{ toolCallId: string; toolName: string; input?: unknown; output?: unknown; state: string }> = [];
+            for (const m of messages) {
+              if (m.role !== 'assistant') continue;
+              for (const p of m.parts) {
+                if (p.type === 'tool' && p.tool.toolName === 'webSearch' && p.tool.state === 'output-available') {
+                  searches.push(p.tool);
+                }
+              }
+            }
+            if (searches.length === 0) return null;
+            return (
+              <div className="relative" ref={searchHistoryRef}>
+                <button
+                  onClick={() => setShowSearchHistory(!showSearchHistory)}
+                  className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors relative"
+                  title="搜索历史"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-blue-500 text-white text-[10px] rounded-full flex items-center justify-center">
+                    {searches.length}
+                  </span>
+                </button>
+                {showSearchHistory && (
+                  <div className="absolute top-full right-0 mt-1 w-80 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-50 py-1 max-h-80 overflow-y-auto">
+                    <div className="px-3 py-2 text-xs text-gray-400 dark:text-gray-500 border-b border-gray-100 dark:border-gray-700">
+                      本次搜索记录
+                    </div>
+                    {searches.map((tool, i) => (
+                      <div key={i} className="px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-700/50 border-b border-gray-50 dark:border-gray-700/30 last:border-0">
+                        <div className="text-xs text-gray-900 dark:text-gray-100 font-medium truncate">
+                          {(tool.input as Record<string, string>)?.query || '搜索'}
+                        </div>
+                        <div className="text-xs text-gray-400 dark:text-gray-500 truncate mt-0.5">
+                          {typeof tool.output === 'string'
+                            ? tool.output.slice(0, 80) + (tool.output.length > 80 ? '...' : '')
+                            : '已获取搜索结果'}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
           {messages.length > 0 && (
             <button onClick={handleShare} className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors" title="分享">
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -500,12 +636,17 @@ export function ChatContainer({ sessionId, isNewSession, onSessionCreated }: Cha
         </div>
       )}
 
-      <MessageList
-        messages={messages}
-        onRegenerate={handleRegenerate}
-        canRegenerate={status === 'idle' && messages.length >= 2}
-        onBranch={handleBranch}
-      />
+      {/* Message list */}
+      {messages.length === 0 ? (
+        <div className="flex-1" />
+      ) : (
+        <MessageList
+          messages={messages}
+          onRegenerate={handleRegenerate}
+          canRegenerate={status === 'idle' && messages.length >= 2}
+          onBranch={handleBranch}
+        />
+      )}
       <ThinkingIndicator />
       <ChatInput onSend={handleSend} disabled={status !== 'idle'} />
     </div>

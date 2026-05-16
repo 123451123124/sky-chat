@@ -44,6 +44,13 @@ export async function POST(request: NextRequest) {
       role: user.role,
     });
 
+    if (!token) {
+      return NextResponse.json(
+        { error: '服务器配置错误：JWT_SECRET 未设置' },
+        { status: 500 }
+      );
+    }
+
     const response = NextResponse.json({
       user: { id: user.id, email: user.email, name: user.name, role: user.role },
     });
