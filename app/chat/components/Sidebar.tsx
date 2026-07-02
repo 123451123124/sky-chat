@@ -30,8 +30,12 @@ export function Sidebar({ currentSessionId, onSelectSession, onNewSession, onDel
 
   const fetchSessions = () => {
     fetch("/api/session")
-      .then((res) => res.json())
-      .then(setSessions);
+      .then((res) => {
+        if (!res.ok) return [];
+        return res.json();
+      })
+      .then(setSessions)
+      .catch(() => {});
   };
 
   useEffect(() => {

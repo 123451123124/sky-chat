@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>sky-chat 项目摸底报告</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 0; color: #18202a; background: #f6f7f9; }
+    main { max-width: 1080px; margin: 0 auto; padding: 32px 20px 56px; }
+    section { margin-top: 24px; }
+    h1, h2 { color: #111827; line-height: 1.2; }
+    h1 { font-size: 34px; margin: 4px 0 8px; }
+    h2 { font-size: 20px; margin: 0 0 12px; }
+    p, li { line-height: 1.65; }
+    .hero { background: #ffffff; border: 1px solid #d8dee8; border-radius: 8px; padding: 22px; }
+    .eyebrow { margin: 0; font-size: 12px; font-weight: 700; letter-spacing: 0; color: #2563eb; text-transform: uppercase; }
+    .muted, .empty { color: #5b6778; }
+    .metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+    .metrics div { background: #ffffff; border: 1px solid #d8dee8; border-radius: 8px; padding: 16px; }
+    .metrics strong { display: block; font-size: 24px; color: #111827; }
+    .metrics span { color: #5b6778; font-size: 13px; }
+    .grid { display: grid; gap: 16px; }
+    .two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .grid > div, section:not(.hero):not(.metrics):not(.grid) { background: #ffffff; border: 1px solid #d8dee8; border-radius: 8px; padding: 18px; }
+    table { width: 100%; border-collapse: collapse; background: #ffffff; }
+    th, td { text-align: left; vertical-align: top; border-bottom: 1px solid #e5e9f0; padding: 9px 10px; font-size: 14px; white-space: pre-wrap; word-break: break-word; }
+    th { color: #334155; background: #eef2f7; }
+    pre { white-space: pre-wrap; word-break: break-word; background: #f8fafc; border: 1px solid #d8dee8; border-radius: 8px; padding: 12px; overflow-x: auto; }
+    code { color: #0f172a; }
+    li { margin: 4px 0; }
+    ul { padding-left: 20px; }
+    @media (max-width: 760px) { .metrics, .two, .three { grid-template-columns: 1fr; } main { padding: 18px 12px 36px; } }
+  </style>
+</head>
+<body>
+  <main>
+    
+    <section class="hero">
+      <p class="eyebrow">鼠鼠实习妙妙工具项目摸底报告</p>
+      <h1>sky-chat</h1>
+      <p class="muted">C:\Users\jw\Desktop\sky-chat\sky-chat</p>
+    </section>
+
+    <section class="metrics">
+      <div><strong>857</strong><span>Files scanned</span></div>
+      <div><strong>312528809</strong><span>Approx bytes</span></div>
+      <div><strong>4</strong><span>Dependency clues</span></div>
+      <div><strong>0</strong><span>Test clues</span></div>
+    </section>
+
+    <section>
+      <h2>语言和文件类型</h2>
+      <div class="grid two">
+        <div><table><thead><tr><th>Language</th><th>Files</th></tr></thead><tbody><tr><td>Other</td><td>510</td></tr><tr><td>JavaScript</td><td>282</td></tr><tr><td>TypeScript</td><td>61</td></tr><tr><td>SQL</td><td>3</td></tr><tr><td>TOML</td><td>1</td></tr></tbody></table></div>
+        <div><table><thead><tr><th>Extension</th><th>Files</th></tr></thead><tbody><tr><td>.js</td><td>282</td></tr><tr><td>.map</td><td>218</td></tr><tr><td>.json</td><td>166</td></tr><tr><td>.ts</td><td>38</td></tr><tr><td>.rsc</td><td>27</td></tr><tr><td>.meta</td><td>25</td></tr><tr><td>.tsx</td><td>23</td></tr><tr><td>.sst</td><td>20</td></tr><tr><td>[no extension]</td><td>13</td></tr><tr><td>.md</td><td>7</td></tr><tr><td>.css</td><td>7</td></tr><tr><td>.html</td><td>6</td></tr><tr><td>.svg</td><td>5</td></tr><tr><td>.woff2</td><td>4</td></tr><tr><td>.ico</td><td>3</td></tr></tbody></table></div>
+      </div>
+    </section>
+
+    <section>
+      <h2>核心链路线索</h2>
+      <table><thead><tr><th>Category</th><th>Hit Count</th><th>Representative Paths</th></tr></thead><tbody><tr><td>api_backend</td><td>40</td><td>.next/app-path-routes-manifest.json
+.next/dev/routes-manifest.json
+.next/dev/server/app-paths-manifest.json
+.next/dev/server/app/admin/page.js
+.next/dev/server/app/admin/page.js.map
+.next/dev/server/app/admin/page/app-paths-manifest.json
+.next/dev/server/app/admin/page/build-manifest.json
+.next/dev/server/app/admin/page/next-font-manifest.json
+.next/dev/server/app/admin/page/react-loadable-manifest.json
+.next/dev/server/app/admin/page/server-reference-manifest.json</td></tr><tr><td>config</td><td>8</td><td>.claude/settings.local.json
+.next/dev/cache/next-devtools-config.json
+.next/server/functions-config-manifest.json
+eslint.config.mjs
+next.config.ts
+postcss.config.mjs
+tsconfig.json
+tsconfig.tsbuildinfo</td></tr><tr><td>database_state</td><td>40</td><td>.next/cache/.previewinfo
+.next/cache/.rscinfo
+.next/cache/.tsbuildinfo
+.next/dev/cache/.rscinfo
+.next/dev/cache/next-devtools-config.json
+.next/dev/cache/turbopack/2275bd85/00000001.sst
+.next/dev/cache/turbopack/2275bd85/00000005.sst
+.next/dev/cache/turbopack/2275bd85/00000006.sst
+.next/dev/cache/turbopack/2275bd85/00000007.sst
+.next/dev/cache/turbopack/2275bd85/00000008.meta</td></tr><tr><td>devops_deploy</td><td>6</td><td>.next/cache/.rscinfo
+.next/dev/cache/.rscinfo
+.next/dev/static/chunks/node_modules_echarts_lib_label_0ew_cim._.js
+.next/dev/static/chunks/node_modules_echarts_lib_label_0ew_cim._.js.map
+.next/server/chunks/ssr/_0cijloo._.js
+.next/server/chunks/ssr/_0cijloo._.js.map</td></tr><tr><td>frontend_mobile</td><td>40</td><td>.next/cache/.previewinfo
+.next/dev/server/app/admin/page.js
+.next/dev/server/app/admin/page.js.map
+.next/dev/server/app/admin/page/app-paths-manifest.json
+.next/dev/server/app/admin/page/build-manifest.json
+.next/dev/server/app/admin/page/next-font-manifest.json
+.next/dev/server/app/admin/page/react-loadable-manifest.json
+.next/dev/server/app/admin/page/server-reference-manifest.json
+.next/dev/server/app/admin/page_client-reference-manifest.js
+.next/dev/server/app/chat/page.js</td></tr><tr><td>inference_demo</td><td>40</td><td>.next/app-path-routes-manifest.json
+.next/dev/server/app-paths-manifest.json
+.next/dev/server/app/admin/page.js
+.next/dev/server/app/admin/page.js.map
+.next/dev/server/app/admin/page/app-paths-manifest.json
+.next/dev/server/app/admin/page/build-manifest.json
+.next/dev/server/app/admin/page/next-font-manifest.json
+.next/dev/server/app/admin/page/react-loadable-manifest.json
+.next/dev/server/app/admin/page/server-reference-manifest.json
+.next/dev/server/app/admin/page_client-reference-manifest.js</td></tr><tr><td>model</td><td>40</td><td>.next/dev/server/chunks/node_modules_0~24uzp._.js
+.next/dev/server/chunks/node_modules_0~24uzp._.js.map
+.next/dev/server/chunks/ssr/node_modules_0.shb2p._.js
+.next/dev/server/chunks/ssr/node_modules_0.shb2p._.js.map
+.next/dev/server/chunks/ssr/node_modules_09w7yel._.js
+.next/dev/server/chunks/ssr/node_modules_09w7yel._.js.map
+.next/dev/server/chunks/ssr/node_modules_0ctd64b._.js
+.next/dev/server/chunks/ssr/node_modules_0ctd64b._.js.map
+.next/dev/server/chunks/ssr/node_modules_0jsi2r3._.js
+.next/dev/server/chunks/ssr/node_modules_0jsi2r3._.js.map</td></tr><tr><td>security_auth</td><td>40</td><td>.next/dev/server/app/api/auth/login/route.js
+.next/dev/server/app/api/auth/login/route.js.map
+.next/dev/server/app/api/auth/login/route/app-paths-manifest.json
+.next/dev/server/app/api/auth/login/route/build-manifest.json
+.next/dev/server/app/api/auth/login/route/server-reference-manifest.json
+.next/dev/server/app/api/auth/login/route_client-reference-manifest.js
+.next/dev/server/app/api/auth/me/route.js
+.next/dev/server/app/api/auth/me/route.js.map
+.next/dev/server/app/api/auth/me/route/app-paths-manifest.json
+.next/dev/server/app/api/auth/me/route/build-manifest.json</td></tr></tbody></table>
+    </section>
+
+    <section class="grid two">
+      <div>
+        <h2>依赖和环境</h2>
+        <ul><li><code>.next/dev/package.json</code></li><li><code>.next/package.json</code></li><li><code>package.json</code></li><li><code>tsconfig.json</code></li></ul>
+      </div>
+      <div>
+        <h2>README</h2>
+        <ul><li><code>README.md</code></li></ul>
+      </div>
+    </section>
+
+    <section class="grid three">
+      <div>
+        <h2>Notebooks</h2>
+        <p class="empty">无</p>
+      </div>
+      <div>
+        <h2>Docker</h2>
+        <p class="empty">无</p>
+      </div>
+      <div>
+        <h2>Tests</h2>
+        <p class="empty">无</p>
+      </div>
+    </section>
+
+    <section>
+      <h2>潜在数据 / 状态 / 模型 / 资源路径</h2>
+      <ul><li><code>.next/dev/logs/next-development.log</code></li><li><code>.next/dev/static/chunks/[turbopack]_browser_dev_hmr-client_hmr-client_ts_0yjw1oe._.js</code></li><li><code>.next/dev/static/chunks/[turbopack]_browser_dev_hmr-client_hmr-client_ts_0yjw1oe._.js.map</code></li><li><code>.next/dev/static/chunks/[turbopack]_browser_dev_hmr-client_hmr-client_ts_10mygs7._.js</code></li><li><code>.next/dev/static/chunks/[turbopack]_browser_dev_hmr-client_hmr-client_ts_10z625~._.js</code></li><li><code>.next/dev/static/chunks/[turbopack]_browser_dev_hmr-client_hmr-client_ts_10z625~._.js.map</code></li><li><code>.next/dev/static/chunks/_0.iou3f._.js</code></li><li><code>.next/dev/static/chunks/_0.iou3f._.js.map</code></li><li><code>.next/dev/static/chunks/_07lq-lb._.js</code></li><li><code>.next/dev/static/chunks/_07lq-lb._.js.map</code></li><li><code>.next/dev/static/chunks/_0gwi_ag._.js</code></li><li><code>.next/dev/static/chunks/_0gwi_ag._.js.map</code></li><li><code>.next/dev/static/chunks/_0ikyn_8._.css</code></li><li><code>.next/dev/static/chunks/_0ikyn_8._.css.map</code></li><li><code>.next/dev/static/chunks/_0p44nws._.js.map</code></li><li><code>.next/dev/static/chunks/_0rqeker._.js</code></li><li><code>.next/dev/static/chunks/app_admin_page_tsx_0crj78o._.js</code></li><li><code>.next/dev/static/chunks/app_chat_page_tsx_0crj78o._.js</code></li><li><code>.next/dev/static/chunks/app_globals_css_0w3-wzy._.single.css</code></li><li><code>.next/dev/static/chunks/app_globals_css_0w3-wzy._.single.css.map</code></li><li><code>.next/dev/static/chunks/app_layout_tsx_004glpo._.js</code></li><li><code>.next/dev/static/chunks/app_login_page_tsx_0crj78o._.js</code></li><li><code>.next/dev/static/chunks/components_ThemeProvider_tsx_0qy4dd_._.js</code></li><li><code>.next/dev/static/chunks/components_ThemeProvider_tsx_0qy4dd_._.js.map</code></li><li><code>.next/dev/static/chunks/node_modules_02-64to._.js</code></li><li><code>.next/dev/static/chunks/node_modules_02-64to._.js.map</code></li><li><code>.next/dev/static/chunks/node_modules_06dcl1b._.js</code></li><li><code>.next/dev/static/chunks/node_modules_06dcl1b._.js.map</code></li><li><code>.next/dev/static/chunks/node_modules_0gdfm4s._.js</code></li><li><code>.next/dev/static/chunks/node_modules_0gdfm4s._.js.map</code></li></ul>
+    </section>
+
+    <section>
+      <h2>目录树摘要</h2>
+      <pre>sky-chat/
+  .claude/
+  .next/
+  app/
+  components/
+  lib/
+  prisma/
+  public/
+  store/
+  .env
+  .env.example
+  .gitignore
+  AGENTS.md
+  CLAUDE.md
+  KNOWLEDGE.md
+  PROJECT_HIGHLIGHTS.md
+  README.md
+  components.json
+  eslint.config.mjs
+  middleware.ts
+  next-env.d.ts
+  next.config.ts
+  package-lock.json
+  package.json
+  postcss.config.mjs
+  tsconfig.json
+  tsconfig.tsbuildinfo
+  简历.tex
+  面试问答-SkyChat.md
+  面试题.md
+    settings.local.json
+    cache/
+    dev/
+    diagnostics/
+    server/
+    static/
+    types/
+    BUILD_ID
+    app-path-routes-manifest.json
+    build-manifest.json
+    export-marker.json
+    fallback-build-manifest.json
+    images-manifest.json
+    next-minimal-server.js.nft.json
+    next-server.js.nft.json
+    package.json
+    prerender-manifest.json
+    required-server-files.js
+    required-server-files.json
+    routes-manifest.json
+    trace
+    trace-build
+    turbopack
+      .previewinfo
+      .rscinfo
+      .tsbuildinfo
+      cache/
+      logs/
+      server/
+      static/
+      types/
+      build-manifest.json
+      fallback-build-manifest.json
+      package.json
+      prerender-manifest.json
+      routes-manifest.json
+      trace
+      build-diagnostics.json
+      framework.json
+      route-bundle-stats.json
+      app/
+      chunks/
+      edge/
+      middleware/
+      pages/
+      app-paths-manifest.json
+      functions-config-manifest.json
+      interception-route-rewrite-manifest.js
+      middleware-build-manifest.js
+      middleware-manifest.json
+      next-font-manifest.js
+      next-font-manifest.json
+      pages-manifest.json
+      prefetch-hints.json
+      server-reference-manifest.js
+      server-reference-manifest.json
+      GPWrwr1hiQ2StghBU3oaa/
+      chunks/
+      media/
+      cache-life.d.ts
+      routes.d.ts
+      validator.ts
+    admin/
+    api/
+    chat/
+    login/
+    register/
+    share/
+    favicon.ico
+    globals.css
+    layout.tsx
+    page.tsx
+      AdminPageClient.tsx
+      page.tsx
+      auth/
+      chat/
+      generate-image/
+      message/
+      monitor/
+      session/
+      share/
+      upload/
+      user/
+      components/
+      ChatContainer.tsx
+      ChatPageClient.tsx
+      page.tsx
+      page.tsx
+      page.tsx
+      [token]/
+    ui/
+    ScrollToBottom.tsx
+    ThemeProvider.tsx
+    ThemeToggle.tsx
+      button.tsx
+      card.tsx
+      input.tsx
+      textarea.tsx
+    monitor/
+    ai-stream.ts
+    auth.ts
+    models.ts
+    prisma.ts
+    search.ts
+    sse-parser.ts
+    stream-buffer.ts
+    utils.ts
+      collector.ts
+      index.ts
+      indexeddb.ts
+      reporter.ts
+      types.ts
+    migrations/
+    schema.prisma
+    seed.ts
+      20260425123345_init/
+      20260427091308_add_user_auth/
+      20260514083335_add_message_parts/
+      migration_lock.toml
+    file.svg
+    globe.svg
+    next.svg
+    vercel.svg
+    window.svg
+    useAuthStore.ts
+    useChatStore.ts</pre>
+    </section>
+
+    <section>
+      <h2>下一步人工确认</h2>
+      <ul>
+        <li>找到最小可运行命令：API、页面、CLI、worker、测试、训练或 demo 至少一个。</li>
+        <li>确认依赖、环境变量、数据库/数据文件、端口和外部服务。</li>
+        <li>确认 baseline/demo 是否能在本地、Docker、云服务器或 GPU 环境上跑通。</li>
+        <li>确认自己的面试亮点：改造点、demo、测试、报告或实验计划。</li>
+      </ul>
+    </section>
+    
+  </main>
+</body>
+</html>

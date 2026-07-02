@@ -14,7 +14,13 @@
       "Bash(Get-ChildItem -Recurse -Depth 0 -Name)",
       "Bash(Sort-Object)",
       "Bash(Select-Object -First 50)",
-      "PowerShell(npm run *)"
+      "PowerShell(npm run *)",
+      "Skill(shushu-internship-tool)",
+      "Bash(pip list *)",
+      "Bash(findstr /i \"jinja\")",
+      "Bash(findstr /i \"rich\")",
+      "Bash(python *)",
+      "Bash(PYTHONPATH=\"C:/Users/jw/.claude/skills/shushu-internship-tool/scripts\" python *)"
     ]
   }
 }

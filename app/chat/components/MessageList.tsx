@@ -3,7 +3,7 @@
 import { useRef, useEffect, useLayoutEffect, useCallback, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { Message, MessagePart } from "@/store/useChatStore";
-import { MessagePartRenderer, StreamingSkeleton } from "./MarkdownRenderer";
+import { MessagePartRenderer, StreamingSkeleton, resetStepCounter } from "./MarkdownRenderer";
 import { ScrollToBottom } from "@/components/ScrollToBottom";
 
 interface MessageListProps {
@@ -53,7 +53,7 @@ function MessageBubble({ message, onRegenerate, canRegenerate, onBranch, index }
   if (isUser) {
     return (
       <div className="flex justify-end gap-3 animate-fade-in-up relative group">
-        <div className="max-w-[70%] rounded-2xl px-4 py-3 bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm">
+        <div className="max-w-[70%] rounded-2xl rounded-br-md px-4 py-3 bg-gradient-to-br from-gray-100 to-gray-50 dark:from-gray-700 dark:to-gray-750 text-gray-900 dark:text-gray-100 shadow-sm border border-gray-200/40 dark:border-gray-600/30">
           <p className="whitespace-pre-wrap text-sm leading-relaxed">{message.content}</p>
         </div>
       </div>
@@ -62,11 +62,14 @@ function MessageBubble({ message, onRegenerate, canRegenerate, onBranch, index }
 
   const hasContent = message.parts.length > 0 || message.content;
 
+  // Reset step counter for each message
+  resetStepCounter();
+
   return (
     <div className="flex justify-start gap-3 animate-fade-in-up relative group">
       <div className="flex-shrink-0 mt-1">
-        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-gray-200 to-gray-300 dark:from-gray-600 dark:to-gray-700 flex items-center justify-center shadow-sm">
-          <svg className="w-4 h-4 text-gray-600 dark:text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 dark:from-blue-600 dark:to-indigo-700 flex items-center justify-center shadow-md shadow-blue-500/20">
+          <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
           </svg>
         </div>
@@ -84,12 +87,12 @@ function MessageBubble({ message, onRegenerate, canRegenerate, onBranch, index }
             )
           )}
         </div>
-        <div className="flex items-center gap-1 mt-1 opacity-0 group-hover/message:opacity-100 transition-opacity">
+        <div className="flex items-center gap-0.5 mt-1.5 opacity-0 group-hover/message:opacity-100 transition-opacity duration-200">
           <CopyButton content={message.content} />
           {canRegenerate && onRegenerate && (
             <button
               onClick={onRegenerate}
-              className="p-1 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 transition-all"
+              className="p-1.5 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 transition-all"
               title="重新生成"
             >
               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -100,10 +103,13 @@ function MessageBubble({ message, onRegenerate, canRegenerate, onBranch, index }
           {onBranch && (
             <button
               onClick={() => onBranch(index)}
-              className="p-1 text-gray-400 hover:text-blue-600 dark:text-gray-500 dark:hover:text-blue-400 rounded-md hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-all text-xs"
+              className="flex items-center gap-1 px-2 py-1 text-xs text-gray-400 hover:text-blue-600 dark:text-gray-500 dark:hover:text-blue-400 rounded-md hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-all"
               title="从这里继续"
             >
-              从这里继续
+              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
+              </svg>
+              继续
             </button>
           )}
         </div>

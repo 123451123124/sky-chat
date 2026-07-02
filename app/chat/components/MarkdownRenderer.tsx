@@ -187,6 +187,12 @@ interface MessagePartRendererProps {
   part: MessagePart;
 }
 
+let stepCounter = 0;
+
+export function resetStepCounter() {
+  stepCounter = 0;
+}
+
 export function MessagePartRenderer({ part }: MessagePartRendererProps) {
   switch (part.type) {
     case 'text':
@@ -196,31 +202,70 @@ export function MessagePartRenderer({ part }: MessagePartRendererProps) {
           isStreaming={(part as TextPart).state === 'streaming'}
         />
       );
-    case 'reasoning':
+    case 'reasoning': {
+      const reasoningPart = part as ReasoningPart;
+      const isStreaming = reasoningPart.state === 'streaming';
       return (
-        <div className="mb-2 p-3 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-700 rounded-lg text-sm text-amber-800 dark:text-amber-200">
-          <div className="flex items-center gap-1 mb-1 font-medium">
+        <div className={`mb-2 p-3 rounded-lg text-sm ${
+          isStreaming
+            ? 'bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-700'
+            : 'bg-amber-50/70 dark:bg-amber-900/20 border border-amber-200/60 dark:border-amber-700/40'
+        }`}>
+          <div className="flex items-center gap-1 mb-1 font-medium text-amber-700 dark:text-amber-300">
             <span>💭</span>
             <span>思考过程</span>
           </div>
-          <div className="whitespace-pre-wrap">
-            {(part as ReasoningPart).text}
-            {(part as ReasoningPart).state === 'streaming' && (
+          <div className="whitespace-pre-wrap text-amber-800 dark:text-amber-200/90 leading-relaxed">
+            {reasoningPart.text}
+            {isStreaming && (
               <span className="inline-block w-0.5 h-[1em] bg-amber-500 animate-caret ml-0.5" />
             )}
           </div>
         </div>
       );
+    }
     case 'tool': {
       const tool = (part as ToolPart).tool;
       const isSearch = tool.toolName === 'webSearch';
+
+      const stateIcon = () => {
+        switch (tool.state) {
+          case 'input-streaming':
+            return (
+              <span className="flex gap-0.5 ml-2">
+                <span className="w-1 h-1 bg-blue-400 rounded-full animate-typing-wave" style={{ animationDelay: '0s' }} />
+                <span className="w-1 h-1 bg-blue-400 rounded-full animate-typing-wave" style={{ animationDelay: '0.2s' }} />
+                <span className="w-1 h-1 bg-blue-400 rounded-full animate-typing-wave" style={{ animationDelay: '0.4s' }} />
+              </span>
+            );
+          case 'output-available':
+            return (
+              <span className="animate-check-pop inline-flex items-center justify-center w-4 h-4 rounded-full bg-green-100 dark:bg-green-900/40 ml-2">
+                <svg className="w-2.5 h-2.5 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+              </span>
+            );
+          case 'output-error':
+            return (
+              <span className="animate-shake inline-flex items-center justify-center w-4 h-4 rounded-full bg-red-100 dark:bg-red-900/40 ml-2">
+                <svg className="w-2.5 h-2.5 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </span>
+            );
+          default:
+            return null;
+        }
+      };
+
       return (
         <div className={`mb-2 p-3 rounded-lg text-sm ${
           isSearch
             ? 'bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700'
             : 'bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700'
         }`}>
-          <div className={`flex items-center gap-1 font-medium ${
+          <div className={`flex items-center font-medium ${
             isSearch ? 'text-gray-600 dark:text-gray-400' : 'text-blue-800 dark:text-blue-200'
           }`}>
             {isSearch ? (
@@ -229,7 +274,7 @@ export function MessagePartRenderer({ part }: MessagePartRendererProps) {
               </svg>
             ) : <span>🔧</span>}
             {isSearch ? (
-              <span className="text-xs">
+              <span className="text-xs ml-1">
                 {tool.state === 'output-available' || tool.state === 'output-error'
                   ? '已搜索互联网'
                   : '正在搜索互联网...'}
@@ -237,6 +282,7 @@ export function MessagePartRenderer({ part }: MessagePartRendererProps) {
             ) : (
               <>
                 <span>工具调用: {tool.toolName}</span>
+                {stateIcon()}
                 {tool.state === 'input-streaming' && (
                   <span className="text-xs text-blue-500 ml-2">接收参数中...</span>
                 )}
@@ -281,7 +327,16 @@ export function MessagePartRenderer({ part }: MessagePartRendererProps) {
       );
     }
     case 'step-start':
-      return null;
+      stepCounter++;
+      return (
+        <div className="flex items-center gap-3 my-4">
+          <div className="flex-1 h-px bg-gradient-to-r from-transparent via-gray-300 dark:via-gray-600 to-transparent" />
+          <span className="flex-shrink-0 px-2.5 py-0.5 text-[11px] font-medium text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-800 rounded-full border border-gray-200/60 dark:border-gray-700/40">
+            Step {stepCounter}
+          </span>
+          <div className="flex-1 h-px bg-gradient-to-r from-transparent via-gray-300 dark:via-gray-600 to-transparent" />
+        </div>
+      );
     default:
       return null;
   }
