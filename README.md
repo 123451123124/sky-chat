@@ -95,34 +95,43 @@ ADMIN_EMAIL=admin@example.com ADMIN_PASSWORD=secure-password npm run seed
 ## 项目结构
 
 ```
-app/
-├── page.tsx               # 首页（已登录自动跳转 /chat）
-├── login/                 # 登录页
-├── register/              # 注册页
-├── chat/                  # AI 聊天客户端
-│   ├── page.tsx           # RSC 页面（服务端鉴权 + 数据预取）
-│   ├── ChatPageClient.tsx # 页面客户端（会话管理）
-│   ├── ChatContainer.tsx  # 核心容器（SSE + StreamBuffer + 状态机 + 分享）
-│   └── components/
-│       ├── MessageList.tsx       # 虚拟滚动消息列表（智能滚动、复制/重新生成）
-│       ├── MarkdownRenderer.tsx  # Markdown 渲染 + 流式补全 + 工具调用卡片
-│       ├── ChatInput.tsx         # 自动伸缩输入框
-│       ├── Sidebar.tsx           # 会话侧边栏 + 用户信息
-│       └── ThinkingIndicator.tsx # 状态指示器（thinking/tool_calling/answering）
-├── share/[token]/         # RSC 分享页（公开，无需登录，客户端 JS ~5.6KB）
-├── admin/                 # 管理后台（ECharts 可视化）
-│   ├── page.tsx           # RSC 页面（仅管理员）
-│   └── AdminPageClient.tsx
-├── api/
-│   ├── auth/              # JWT 认证（register/login/logout/me）
-│   ├── chat/              # SSE 流式对话 + Function Calling（原生 ReadableStream）
-│   ├── session/           # 会话 CRUD（用户隔离）
-│   ├── message/           # 消息 CRUD
-│   ├── share/             # 分享链接生成
-│   ├── generate-image/    # 可选的独立图片服务
-│   ├── monitor/           # 监控数据上报/查询
-│   └── user/              # 用户管理（仅管理员）
-├── proxy.ts          # 路由保护（JWT 校验 + 角色检查）
+./
+├── app/
+│   ├── page.tsx           # 首页（已登录自动跳转 /chat）
+│   ├── login/             # 登录页
+│   ├── register/          # 注册页
+│   ├── chat/              # AI 聊天客户端
+│   │   ├── page.tsx       # 服务端鉴权与数据预取
+│   │   ├── ChatPageClient.tsx # 会话管理
+│   │   ├── ChatContainer.tsx  # 流式聊天、状态机与分享
+│   │   └── components/
+│   │       ├── MessageList.tsx       # 虚拟滚动消息列表
+│   │       ├── MarkdownRenderer.tsx  # 流式 Markdown 与工具调用卡片
+│   │       ├── ChatInput.tsx          # 自动伸缩输入框
+│   │       ├── Sidebar.tsx            # 会话侧边栏与用户信息
+│   │       ├── ThinkingIndicator.tsx  # 对话状态指示器
+│   │       ├── KnowledgePanel.tsx     # 选择会话使用的知识库资料
+│   │       ├── RagSources.tsx         # 展示回答引用的来源
+│   │       └── SourceGraph3D.tsx      # 来源的 3D 关系视图
+│   ├── share/[token]/     # 公开分享页
+│   ├── admin/
+│   │   ├── page.tsx       # 管理后台入口
+│   │   ├── AdminPageClient.tsx # 监控可视化
+│   │   ├── knowledge/     # 知识库上传、发布与权限管理
+│   │   └── rag/           # 检索实验台、评测与入库阶段记录
+│   └── api/
+│       ├── auth/          # JWT 认证
+│       ├── chat/          # SSE 流式对话、工具调用与 RAG 引用
+│       ├── session/       # 会话管理与资料选择（[id]/documents/）
+│       ├── documents/     # 文档上传与管理
+│       ├── knowledge/     # 查询、创建与发布知识库
+│       ├── admin/         # 检索、评测、入库管道与用户组接口
+│       ├── message/       # 消息管理
+│       ├── share/         # 分享链接生成
+│       ├── generate-image/ # 可选的独立图片服务
+│       ├── monitor/       # 监控数据上报与查询
+│       └── user/          # 用户管理
+├── proxy.ts               # 路由保护（JWT 校验 + 角色检查）
 ├── components/            # 共享 UI 组件
 │   ├── ThemeProvider.tsx  # 暗色模式上下文
 │   ├── ThemeToggle.tsx    # 主题切换按钮
@@ -133,11 +142,21 @@ app/
 │   ├── sse-parser.ts      # SSE 流式解析层
 │   ├── ai-stream.ts       # 类型化事件分发（14 种 chunk 类型）
 │   ├── stream-buffer.ts   # RAF 批量渲染缓冲
+│   ├── rag/               # 文档解析、分块、权限校验与检索
+│   │   ├── pipeline/      # 入库阶段执行与中间产物
+│   │   ├── messaging/     # Kafka 消费与阶段消息投递
+│   │   └── search/        # Elasticsearch 索引、BM25 与向量检索
 │   └── monitor/           # 自研监控 SDK
 │       ├── types.ts       # 指标类型定义
 │       ├── collector.ts   # SSEPerformanceTracker + WebVitalsCollector
 │       ├── indexeddb.ts   # IndexedDB 离线队列
 │       └── reporter.ts    # sendBeacon + Fetch 双通道上报
+├── prisma/migrations/     # 知识库、文档版本与入库状态等数据库迁移
+├── infra/compose.rag.yml  # Elasticsearch 与 Kafka 的 Compose 配置
+├── scripts/
+│   ├── rag-kafka-worker.ts # 启动 Kafka 入库 worker
+│   ├── rag-reindex-es.ts   # 重建 Elasticsearch 索引
+│   └── rag-evaluate.ts     # 运行检索评测
 └── store/
     ├── useChatStore.ts    # 聊天状态机（Zustand）
     └── useAuthStore.ts    # 认证状态
@@ -269,4 +288,4 @@ npm audit --omit=dev
 
 管理平台 `/admin/knowledge` 统一批量上传与发布共享资料；`/admin/rag` 提供五种检索对照、评测和文件阶段/DLQ 记录。聊天页保留 Agent 工具循环、SSE 与来源视图。
 
-完整部署、迁移与回滚步骤见 [ES-Kafka 部署与验收](docs/ES-Kafka-部署与验收.md)，实际测试范围和限制见 [本轮实现记录](reports/rag-distributed-implementation.md)。本机服务采用官方原生包完成真实验收；Compose 配置已提供，容器拉取受当前网络限制。
+部署、迁移、回滚及验收步骤见 [ES-Kafka 部署与验收](docs/ES-Kafka-部署与验收.md)。本机服务采用官方原生包完成验收；Compose 配置已提供，容器拉取受当前网络限制。
