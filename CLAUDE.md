@@ -6,8 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Full-stack AI chat platform with custom SSE streaming, Function Calling, monitoring SDK, and admin dashboard.
 
-**Stack:** Next.js 16.2.4 App Router + TypeScript + Tailwind CSS + Zustand + Prisma + PostgreSQL (Supabase)  
-**AI:** Vercel AI SDK v6 + OpenAI Compatible API (Base URL: `https://yunwu.ai/v1`)
+**Stack:** Next.js 16.4.2 App Router + TypeScript + Tailwind CSS + Zustand + Prisma + PostgreSQL (Supabase)
+**AI:** Vercel AI SDK v6 + OpenAI Compatible API (Base URL: `https://dashscope.aliyuncs.com/compatible-mode/v1`)
 
 ## Commands
 
@@ -54,7 +54,7 @@ npx prisma studio      # Open Prisma Studio
 
 ### Auth
 - JWT-based, stored in httpOnly cookie named `sky-chat-token` (7d expiry)
-- Middleware (`middleware.ts`) protects `/chat`, `/admin`, redirects logged-in users away from `/login` and `/register`
+- Middleware (`proxy.ts`) protects `/chat`, `/admin`, redirects logged-in users away from `/login` and `/register`
 - Admin role check in middleware: non-admin users redirected from `/admin` to `/chat`
 - Password hashing with bcryptjs (10 salt rounds)
 
@@ -73,6 +73,6 @@ npx prisma studio      # Open Prisma Studio
 - All component CSS is Tailwind utility classes; `globals.css` uses Tailwind v4 `@import "tailwindcss"` syntax
 
 ### Notable Constraints
-- Must check `node_modules/next/dist/docs/` before writing Next.js code — this repo uses Next.js 16.2.4 which may have API differences
+- Must check `node_modules/next/dist/docs/` before writing Next.js code — this repo uses Next.js 16.4.2 which may have API differences
 - The `/api/chat` route is a custom SSE implementation (not using `ai` SDK's `streamText`), so streaming behavior is controlled by the typed chunk protocol
 - Tool definitions are server-side only; adding a new tool requires updating both the `tools` array and `executeTool()` in `app/api/chat/route.ts`

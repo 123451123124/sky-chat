@@ -1,0 +1,53 @@
+{
+  "fetchedAt": "2026-10-19T16:40:21.898Z",
+  "sources": [
+    {
+      "name": "infiniflow/ragflow",
+      "url": "https://github.com/infiniflow/ragflow",
+      "stars": 92473,
+      "license": "Apache-2.0",
+      "sha": "7eb673bfc3ab1cc22532fe23a1e9bb85c34e48bd",
+      "pushedAt": "2026-10-19T13:17:31Z"
+    },
+    {
+      "name": "onyx-dot-app/onyx",
+      "url": "https://github.com/onyx-dot-app/onyx",
+      "stars": 32584,
+      "license": "NOASSERTION",
+      "sha": "f189d4987e54008ba0ffbf9d7d3f6b30c178eb1a",
+      "pushedAt": "2026-10-19T16:28:42Z"
+    },
+    {
+      "name": "run-llama/llama_index",
+      "url": "https://github.com/run-llama/llama_index",
+      "stars": 52568,
+      "license": "MIT",
+      "sha": "619d74664e8404612038bc15a1a40c686037277c",
+      "pushedAt": "2026-10-14T15:29:28Z"
+    },
+    {
+      "name": "langchain-ai/langchainjs",
+      "url": "https://github.com/langchain-ai/langchainjs",
+      "stars": 18280,
+      "license": "MIT",
+      "sha": "11bd1939f1b162b95524b7f44d2d05d9ab7ce9be",
+      "pushedAt": "2026-10-19T13:54:26Z"
+    },
+    {
+      "name": "pgvector/pgvector-python",
+      "url": "https://github.com/pgvector/pgvector-python",
+      "stars": 1536,
+      "license": "MIT",
+      "sha": "b5d9b7084024a26d4d7b0dda92280a23e7f6d518",
+      "pushedAt": "2026-10-17T05:33:15Z"
+    },
+    {
+      "name": "sindresorhus/p-queue",
+      "url": "https://github.com/sindresorhus/p-queue",
+      "stars": 4293,
+      "license": "MIT",
+      "sha": "7f272ab5ff2254c0dc2537b7977e88ede1cd55e8",
+      "pushedAt": "2026-10-16T21:25:44Z"
+    }
+  ]
+}

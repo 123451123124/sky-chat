@@ -1,13 +1,14 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+@import "./cloud-desk.css";
 
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-sans);
+  --font-sans: var(--font-geist-sans), "Segoe UI", "Microsoft YaHei", sans-serif;
   --font-mono: var(--font-geist-mono);
   --font-heading: var(--font-sans);
   --color-sidebar-ring: var(--sidebar-ring);
@@ -366,3 +367,9 @@
   color: rgba(156, 163, 175, 0.6);
   background: rgba(156, 163, 175, 0.08);
 }
+/* Marketing surface */
+.sky-home { min-height: 100dvh; display: flex; flex-direction: column; background: #fcfcfa; color: #243b33; }
+.dark .sky-home { background: #141c1a; color: #e2ebe5; }
+.sky-home-example { padding: 30px; border: 1px solid #e1e8dc; border-radius: 20px; background: #fff; box-shadow: 12px 18px 0 #edf1e8, 0 24px 80px #2c533a07; transform: rotate(-1deg); }
+.dark .sky-home-example { border-color: #34473c; background: #1a2420; box-shadow: 12px 18px 0 #223228; }
+@media (max-width: 767px) { .sky-home-example { padding: 22px; box-shadow: 7px 10px 0 #edf1e8; transform: none; } }

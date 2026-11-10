@@ -6,7 +6,9 @@ import Image from 'next/image';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import rehypeSanitize from 'rehype-sanitize';
+import { Brain, Check, CircleAlert, Globe2, LoaderCircle, Wrench } from 'lucide-react';
 import type { MessagePart, TextPart, ReasoningPart, ToolPart } from '@/store/useChatStore';
+import { useRagCitation } from './RagSources';
 
 interface MarkdownRendererProps {
   content: string;
@@ -88,6 +90,7 @@ function CodeBlock({ children }: { children: ReactNode }) {
 }
 
 export function MarkdownRenderer({ content, isStreaming }: MarkdownRendererProps) {
+  const citation = useRagCitation();
   const displayContent = isStreaming ? closeOpenMarkdownBlocks(content) : content;
 
   return (
@@ -138,6 +141,10 @@ export function MarkdownRenderer({ content, isStreaming }: MarkdownRendererProps
             );
           },
           a({ href, children }) {
+            if (href?.startsWith('#rag-')) {
+              const source = citation?.trace.sources.find((s) => href === `#rag-${citation.trace.runId}-${s.id}`);
+              return source ? <button className="sky-inline-citation" title={`查看来源：${source.name}`} onClick={() => citation?.select(source.id)}>{children}</button> : <span title="来源尚未核实">{children}</span>;
+            }
             return (
               <a href={href} target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline decoration-blue-400/30">
                 {children}
@@ -146,7 +153,7 @@ export function MarkdownRenderer({ content, isStreaming }: MarkdownRendererProps
           },
           blockquote({ children }) {
             return (
-              <blockquote className="border-l-4 border-gray-300 dark:border-gray-600 pl-4 my-3 text-gray-600 dark:text-gray-400 italic">
+              <blockquote className="sky-quote">
                 {children}
               </blockquote>
             );
@@ -183,171 +190,31 @@ export function MarkdownRenderer({ content, isStreaming }: MarkdownRendererProps
   );
 }
 
-interface MessagePartRendererProps {
-  part: MessagePart;
-}
-
-let stepCounter = 0;
-
-export function resetStepCounter() {
-  stepCounter = 0;
-}
-
-export function MessagePartRenderer({ part }: MessagePartRendererProps) {
+interface MessagePartRendererProps { part: MessagePart; stepNumber?: number }
+export function MessagePartRenderer({ part, stepNumber = 1 }: MessagePartRendererProps) {
   switch (part.type) {
-    case 'text':
-      return (
-        <MarkdownRenderer
-          content={(part as TextPart).text}
-          isStreaming={(part as TextPart).state === 'streaming'}
-        />
-      );
+    case 'rag': return null;
+    case 'text': return <MarkdownRenderer content={(part as TextPart).text} isStreaming={(part as TextPart).state === 'streaming'} />;
     case 'reasoning': {
-      const reasoningPart = part as ReasoningPart;
-      const isStreaming = reasoningPart.state === 'streaming';
-      return (
-        <div className={`mb-2 p-3 rounded-lg text-sm ${
-          isStreaming
-            ? 'bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-700'
-            : 'bg-amber-50/70 dark:bg-amber-900/20 border border-amber-200/60 dark:border-amber-700/40'
-        }`}>
-          <div className="flex items-center gap-1 mb-1 font-medium text-amber-700 dark:text-amber-300">
-            <span>💭</span>
-            <span>思考过程</span>
-          </div>
-          <div className="whitespace-pre-wrap text-amber-800 dark:text-amber-200/90 leading-relaxed">
-            {reasoningPart.text}
-            {isStreaming && (
-              <span className="inline-block w-0.5 h-[1em] bg-amber-500 animate-caret ml-0.5" />
-            )}
-          </div>
-        </div>
-      );
+      const reasoning = part as ReasoningPart;
+      return <details className="sky-reasoning"><summary><Brain size={15} /><span>{reasoning.state === 'streaming' ? '正在思考' : '思考过程'}</span>{reasoning.state === 'streaming' && <LoaderCircle size={13} className="animate-spin" />}</summary><div>{reasoning.text}</div></details>;
     }
     case 'tool': {
       const tool = (part as ToolPart).tool;
-      const isSearch = tool.toolName === 'webSearch';
-
-      const stateIcon = () => {
-        switch (tool.state) {
-          case 'input-streaming':
-            return (
-              <span className="flex gap-0.5 ml-2">
-                <span className="w-1 h-1 bg-blue-400 rounded-full animate-typing-wave" style={{ animationDelay: '0s' }} />
-                <span className="w-1 h-1 bg-blue-400 rounded-full animate-typing-wave" style={{ animationDelay: '0.2s' }} />
-                <span className="w-1 h-1 bg-blue-400 rounded-full animate-typing-wave" style={{ animationDelay: '0.4s' }} />
-              </span>
-            );
-          case 'output-available':
-            return (
-              <span className="animate-check-pop inline-flex items-center justify-center w-4 h-4 rounded-full bg-green-100 dark:bg-green-900/40 ml-2">
-                <svg className="w-2.5 h-2.5 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                </svg>
-              </span>
-            );
-          case 'output-error':
-            return (
-              <span className="animate-shake inline-flex items-center justify-center w-4 h-4 rounded-full bg-red-100 dark:bg-red-900/40 ml-2">
-                <svg className="w-2.5 h-2.5 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </span>
-            );
-          default:
-            return null;
-        }
-      };
-
-      return (
-        <div className={`mb-2 p-3 rounded-lg text-sm ${
-          isSearch
-            ? 'bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700'
-            : 'bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700'
-        }`}>
-          <div className={`flex items-center font-medium ${
-            isSearch ? 'text-gray-600 dark:text-gray-400' : 'text-blue-800 dark:text-blue-200'
-          }`}>
-            {isSearch ? (
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z" />
-              </svg>
-            ) : <span>🔧</span>}
-            {isSearch ? (
-              <span className="text-xs ml-1">
-                {tool.state === 'output-available' || tool.state === 'output-error'
-                  ? '已搜索互联网'
-                  : '正在搜索互联网...'}
-              </span>
-            ) : (
-              <>
-                <span>工具调用: {tool.toolName}</span>
-                {stateIcon()}
-                {tool.state === 'input-streaming' && (
-                  <span className="text-xs text-blue-500 ml-2">接收参数中...</span>
-                )}
-                {tool.state === 'output-available' && (
-                  <span className="text-xs text-green-600 ml-2">✓ 完成</span>
-                )}
-                {tool.state === 'output-error' && (
-                  <span className="text-xs text-red-500 ml-2">✗ 失败</span>
-                )}
-              </>
-            )}
-          </div>
-          {/* 非搜索工具才展示输入输出详情 */}
-          {!isSearch && tool.input != null && (
-            <pre className="text-xs bg-white dark:bg-gray-900 text-gray-800 dark:text-gray-200 p-2 rounded overflow-x-auto mt-1">
-              {typeof tool.input === 'string'
-                ? tool.input
-                : JSON.stringify(tool.input, null, 2)}
-            </pre>
-          )}
-          {!isSearch && tool.state === 'output-available' && tool.output != null && (
-            <div className="mt-1">
-              {typeof tool.output === 'object' && tool.output !== null && 'url' in (tool.output as Record<string, unknown>) ? (
-                <Image
-                  src={(tool.output as { url: string }).url}
-                  alt="Generated"
-                  className="max-w-sm rounded-lg mt-1"
-                  width={384}
-                  height={384}
-                />
-              ) : (
-                <pre className="text-xs bg-white dark:bg-gray-900 text-gray-800 dark:text-gray-200 p-2 rounded overflow-x-auto">
-                  {JSON.stringify(tool.output, null, 2)}
-                </pre>
-              )}
-            </div>
-          )}
-          {tool.state === 'output-error' && tool.errorText && (
-            <p className="text-xs text-red-500 mt-1">{tool.errorText}</p>
-          )}
-        </div>
-      );
+      if (['searchKnowledge', 'readDocument'].includes(tool.toolName)) return null;
+      const running = !['output-available', 'output-error'].includes(tool.state);
+      const failed = tool.state === 'output-error';
+      const name = ({ webSearch: '联网搜索', generateImage: '生成图片' } as Record<string, string>)[tool.toolName] || '使用工具';
+      const output = tool.output as { url?: string; message?: string } | null;
+      return <div className="sky-tool-result"><div><span className="sky-tool-icon">{tool.toolName === 'webSearch' ? <Globe2 size={15} /> : <Wrench size={15} />}</span><span>{name}</span><small>{failed ? '未完成' : running ? '进行中' : '已完成'}</small>{running ? <LoaderCircle size={14} className="animate-spin" /> : failed ? <CircleAlert size={14} /> : <Check size={14} />}</div>
+        {failed && tool.errorText && <p className="sky-inline-error">{tool.errorText}</p>}
+        {tool.state === 'output-available' && output?.url && <Image src={output.url} alt="生成的图片" className="max-w-full rounded-lg mt-3" width={384} height={384} />}
+      </div>;
     }
-    case 'step-start':
-      stepCounter++;
-      return (
-        <div className="flex items-center gap-3 my-4">
-          <div className="flex-1 h-px bg-gradient-to-r from-transparent via-gray-300 dark:via-gray-600 to-transparent" />
-          <span className="flex-shrink-0 px-2.5 py-0.5 text-[11px] font-medium text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-800 rounded-full border border-gray-200/60 dark:border-gray-700/40">
-            Step {stepCounter}
-          </span>
-          <div className="flex-1 h-px bg-gradient-to-r from-transparent via-gray-300 dark:via-gray-600 to-transparent" />
-        </div>
-      );
-    default:
-      return null;
+    case 'step-start': return <div className="sky-agent-step">执行阶段 {stepNumber}</div>;
+    default: return null;
   }
 }
-
 export function StreamingSkeleton() {
-  return (
-    <div className="space-y-3 animate-pulse">
-      <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-3/4" />
-      <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-1/2" />
-      <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-5/6" />
-    </div>
-  );
+  return <div className="sky-waiting" role="status"><LoaderCircle size={16} className="animate-spin" /><span>正在整理回答…</span></div>;
 }

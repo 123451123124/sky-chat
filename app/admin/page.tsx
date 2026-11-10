@@ -3,7 +3,9 @@ import { getCurrentUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { AdminPageClient } from "./AdminPageClient";
 
-export default async function AdminPage() {
+export default async function AdminPage({ searchParams }: { searchParams: Promise<{ view?: string }> }) {
+  const view = (await searchParams).view;
+  const initialTab = view === "users" || view === "stall" ? view : "overview";
   const user = await getCurrentUser();
 
   if (!user) {
@@ -17,7 +19,7 @@ export default async function AdminPage() {
   const [users, sessions, ttfbMetrics, ttlbMetrics, stallMetrics, otherMetrics] = await Promise.all([
     prisma.user.findMany({
       orderBy: { createdAt: "desc" },
-      include: { _count: { select: { sessions: true } } },
+      select: { id: true, email: true, name: true, role: true, createdAt: true, _count: { select: { sessions: true } } },
     }),
     prisma.session.findMany({
       orderBy: { createdAt: "desc" },
@@ -51,7 +53,6 @@ export default async function AdminPage() {
   const serializedUsers = users.map((u) => ({
     ...u,
     createdAt: u.createdAt.toISOString(),
-    updatedAt: u.updatedAt.toISOString(),
   }));
 
   const serializedSessions = sessions.map((s) => ({
@@ -70,6 +71,7 @@ export default async function AdminPage() {
 
   return (
     <AdminPageClient
+      initialTab={initialTab}
       currentUser={user}
       users={serializedUsers}
       sessions={serializedSessions}

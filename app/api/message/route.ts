@@ -18,6 +18,25 @@ export async function POST(request: NextRequest) {
       return Response.json({ error: "Session not found" }, { status: 404 });
     }
 
+    const replacement = body.replaceMessageId;
+    if (replacement !== undefined) {
+      if (typeof replacement !== "string" || body.role !== "assistant") {
+        return Response.json({ error: "Invalid replacement" }, { status: 400 });
+      }
+      // The session ownership check above also applies to regenerated answers.
+      const existing = await prisma.message.findFirst({ where: { id: replacement, sessionId: session.id, role: "assistant" } });
+      if (!existing) return Response.json({ error: "Message not found" }, { status: 404 });
+      const message = await prisma.$transaction(async (transaction) => {
+        const updated = await transaction.message.update({
+          where: { id: existing.id },
+          data: { content: body.content, parts: Array.isArray(body.parts) ? body.parts : [] },
+        });
+        await transaction.session.update({ where: { id: session.id }, data: { updatedAt: new Date() } });
+        return updated;
+      });
+      return Response.json(message);
+    }
+
     const message = await prisma.message.create({
       data: {
         sessionId: body.sessionId,

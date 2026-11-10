@@ -1,235 +1,41 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
-
-export interface FileAttachment {
-  fileName: string;
-  textContent: string;
-  fileSize: number;
-}
-
+import { useState, useRef, useEffect } from "react";
+import { ArrowUp, Square } from "lucide-react";
 interface ChatInputProps {
-  onSend: (message: string, file?: FileAttachment) => void;
-  disabled?: boolean;
-  placeholder?: string;
-  centered?: boolean;
+  onSend: (message: string) => Promise<void>;
+  value: string; onChange: (value: string) => void;
+  disabled?: boolean; busy?: boolean; onStop?: () => void; centered?: boolean;
 }
-
-export function ChatInput({ onSend, disabled, placeholder, centered }: ChatInputProps) {
-  const [input, setInput] = useState("");
-  const [file, setFile] = useState<File | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const [fileError, setFileError] = useState<string | null>(null);
-  const [sendError, setSendError] = useState<string | null>(null);
+export function ChatInput({ onSend, value, onChange, disabled, busy, onStop, centered }: ChatInputProps) {
+  const [error, setError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
+  const submitting = useRef(false);
+  const composing = useRef(false);
   useEffect(() => {
-    if (!disabled && textareaRef.current) {
-      textareaRef.current.focus();
-    }
-  }, [disabled]);
-
-  const autoResize = useCallback(() => {
-    const el = textareaRef.current;
-    if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = Math.min(el.scrollHeight, 200) + 'px';
-  }, []);
-
-  useEffect(() => {
-    autoResize();
-  }, [input, autoResize]);
-
+    const element = textareaRef.current;
+    if (!element) return;
+    element.style.height = "auto";
+    element.style.height = `${Math.min(element.scrollHeight, 200)}px`;
+  }, [value]);
   const handleSubmit = async () => {
-    const text = input.trim();
-    if ((!text && !file) || disabled || uploading) return;
-    setSendError(null);
-
-    if (file) {
-      setUploading(true);
-      setFileError(null);
-      try {
-        const formData = new FormData();
-        formData.append('file', file);
-        const res = await fetch('/api/upload', { method: 'POST', body: formData });
-        const data = await res.json();
-        if (!res.ok) {
-          setFileError(data.error || '上传失败');
-          return;
-        }
-        if (data.textContent === undefined || data.textContent === null) {
-          setFileError('文件内容为空');
-          return;
-        }
-        try {
-          onSend(text, { fileName: data.fileName, textContent: data.textContent, fileSize: data.fileSize });
-        } catch (e) {
-          console.error('Send error after upload:', e);
-          setFileError('发送失败，请重试');
-          return;
-        }
-      } catch (e) {
-        console.error('Upload error:', e);
-        setFileError('上传失败，请重试');
-        return;
-      } finally {
-        setUploading(false);
-        setFile(null);
-      }
-    } else {
-      try {
-        onSend(text, undefined);
-      } catch (e) {
-        console.error('Send error:', e);
-        setSendError('发送失败，请重试');
-        return;
-      }
-    }
-
-    setInput("");
+    const text = value.trim();
+    if (!text || disabled || busy || submitting.current) return;
+    submitting.current = true; setError(null);
+    try { await onSend(text); onChange(""); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : "发送失败，请重试"); }
+    finally { submitting.current = false; }
   };
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSubmit();
-    }
-  };
-
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selected = e.target.files?.[0];
-    if (!selected) return;
-
-    const ext = selected.name.split('.').pop()?.toLowerCase() || '';
-    const supportedTypes = [
-      'application/pdf',
-      'text/plain', 'text/csv', 'text/html', 'text/css', 'text/javascript',
-      'application/json', 'application/xml', 'text/xml',
-      'image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/bmp', 'image/svg+xml',
-    ];
-    const supportedExts = [
-      'pdf',
-      'txt', 'md', 'csv', 'json', 'xml', 'yaml', 'yml',
-      'js', 'jsx', 'ts', 'tsx', 'py', 'rb', 'go', 'rs', 'java', 'c', 'cpp', 'h',
-      'html', 'htm', 'css', 'scss', 'less',
-      'sh', 'bash', 'ps1', 'sql',
-      'toml', 'ini', 'cfg', 'env',
-      'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg',
-    ];
-
-    const isSupported =
-      supportedTypes.some((t) => selected.type === t || selected.type.startsWith(t + ';')) ||
-      supportedExts.includes(ext);
-
-    if (!isSupported) {
-      setFileError(`不支持的文件类型: ${ext || selected.type}`);
-      return;
-    }
-
-    const maxSize = selected.type.startsWith('image/') ? 5 * 1024 * 1024 : 10 * 1024 * 1024;
-    if (selected.size > maxSize) {
-      setFileError(`文件大小超过 ${maxSize / 1024 / 1024}MB 限制`);
-      return;
-    }
-    setFile(selected);
-    setFileError(null);
-  };
-
-  const clearFile = () => {
-    setFile(null);
-    setFileError(null);
-    if (fileInputRef.current) fileInputRef.current.value = '';
-  };
-
-  const inputContent = (
-    <>
-      {/* File chip */}
-      {file && (
-        <div className="flex items-center gap-2 px-4 pt-2">
-          <div className="flex items-center gap-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-200/40 dark:border-blue-700/30 rounded-lg px-3 py-1.5 text-sm">
-            <svg className="w-4 h-4 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-            </svg>
-            <span className="text-gray-700 dark:text-gray-300 truncate max-w-[200px]">{file.name}</span>
-            <button onClick={clearFile} className="text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-colors">
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-        </div>
-      )}
-      {fileError && (
-        <div className="px-4 pt-2 text-xs text-red-500">{fileError}</div>
-      )}
-      {sendError && (
-        <div className="px-4 pt-2 text-xs text-red-500">{sendError}</div>
-      )}
-
-      {/* Input row */}
-      <div className="flex items-end gap-2 px-3 py-2">
-        <button
-          type="button"
-          onClick={() => fileInputRef.current?.click()}
-          disabled={disabled || uploading}
-          className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 disabled:opacity-30 transition-colors self-end"
-          title="上传文件"
-        >
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
-          </svg>
-        </button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".pdf,.txt,.md,.csv,.json,.xml,.yaml,.yml,.js,.jsx,.ts,.tsx,.py,.rb,.go,.rs,.java,.c,.cpp,.h,.html,.htm,.css,.scss,.less,.sh,.bash,.ps1,.sql,.toml,.ini,.cfg,.env,.png,.jpg,.jpeg,.gif,.webp,.bmp,.svg,application/pdf,text/*,image/*"
-          onChange={handleFileSelect}
-          className="hidden"
-        />
-        <textarea
-          ref={textareaRef}
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder={uploading ? "正在上传文件..." : (placeholder || "发送消息")}
-          className="flex-1 resize-none bg-transparent text-sm outline-none placeholder:text-gray-400 dark:placeholder:text-gray-500 text-gray-900 dark:text-gray-100 max-h-[200px]"
-          rows={1}
-          disabled={disabled || uploading}
-          style={{ minHeight: '24px' }}
-        />
-        <button
-          onClick={handleSubmit}
-          disabled={disabled || (!input.trim() && !file) || uploading}
-          className="p-2 rounded-lg bg-gradient-to-br from-gray-800 to-gray-900 dark:from-gray-200 dark:to-gray-100 text-white dark:text-gray-900 hover:from-gray-700 hover:to-gray-800 dark:hover:from-gray-300 dark:hover:to-gray-200 disabled:opacity-30 disabled:cursor-not-allowed transition-all shadow-sm hover:shadow-md self-end active:scale-95"
-        >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M5 12h14M12 5l7 7-7 7" />
-          </svg>
-        </button>
+  return <div className={`sky-composer-wrap ${centered ? "is-centered" : ""}`}>
+    <div className="sky-composer">
+      <textarea ref={textareaRef} value={value} onChange={(e) => onChange(e.target.value)} onCompositionStart={() => { composing.current = true; }} onCompositionEnd={() => { composing.current = false; }} onKeyDown={(e) => {
+        if (e.key === "Enter" && !e.shiftKey && !composing.current && !e.nativeEvent.isComposing && e.keyCode !== 229) { e.preventDefault(); void handleSubmit(); }
+      }} placeholder="把想法写下来，我们一起往下想。" aria-label="输入消息" disabled={disabled || busy} rows={2} className="sky-message-input" />
+      <div className="sky-composer-actions"><span className="sky-composer-hint">需要参考资料？在顶部选择知识库。</span>
+        {busy && onStop ? <button onClick={onStop} className="sky-send-button" aria-label="停止生成" title="停止生成"><Square size={14} fill="currentColor" /></button> : <button onClick={() => void handleSubmit()} disabled={disabled || !value.trim()} className="sky-send-button" aria-label="发送消息" title="发送消息"><ArrowUp size={19} /></button>}
       </div>
-    </>
-  );
-
-  if (centered) {
-    return (
-      <div className="w-full max-w-2xl mx-auto">
-        <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-xl shadow-sm focus-within:border-blue-300 dark:focus-within:border-blue-600 focus-within:ring-2 focus-within:ring-blue-400/20 dark:focus-within:ring-blue-500/15 focus-within:shadow-blue-500/5 dark:focus-within:shadow-blue-500/10 focus-within:shadow-lg transition-all duration-200">
-          {inputContent}
-        </div>
-        <p className="text-xs text-gray-400 text-center mt-2">AI 回复仅供参考</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="border-t border-gray-200 dark:border-gray-700/50 bg-white dark:bg-gray-900 p-3 lg:p-4">
-      <div className="max-w-3xl mx-auto">
-        <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-xl shadow-sm focus-within:border-blue-300 dark:focus-within:border-blue-600 focus-within:ring-2 focus-within:ring-blue-400/20 dark:focus-within:ring-blue-500/15 focus-within:shadow-blue-500/5 dark:focus-within:shadow-blue-500/10 focus-within:shadow-lg transition-all duration-200">
-          {inputContent}
-        </div>
-        <p className="text-xs text-gray-400 text-center mt-2">AI 回复仅供参考</p>
-      </div>
+      {error && <p role="alert" className="px-4 pb-3 sky-inline-error">{error}</p>}
     </div>
-  );
+    {!centered && <div className="sky-composer-note"><span>AI 也会有疏漏，重要信息请核实。</span><span className="sky-keyboard-hint"><kbd>Enter</kbd> 发送 <span className="mx-1">·</span> <kbd>Shift + Enter</kbd> 换行</span></div>}
+  </div>;
 }

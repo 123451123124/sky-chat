@@ -3,8 +3,10 @@
 import { useRef, useEffect, useLayoutEffect, useCallback, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { Message, MessagePart } from "@/store/useChatStore";
-import { MessagePartRenderer, StreamingSkeleton, resetStepCounter } from "./MarkdownRenderer";
+import { MessagePartRenderer, StreamingSkeleton } from "./MarkdownRenderer";
+import { SkyMark } from "@/components/SkyMark";
 import { ScrollToBottom } from "@/components/ScrollToBottom";
+import { RagSourceProvider } from './RagSources';
 
 interface MessageListProps {
   messages: Message[];
@@ -24,8 +26,9 @@ function CopyButton({ content }: { content: string }) {
   return (
     <button
       onClick={handleCopy}
-      className="p-1 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 transition-all"
+      className="sky-copy-button"
       title="复制"
+      aria-label={copied ? "已复制回复" : "复制回复"}
     >
       {copied ? (
         <svg className="w-3.5 h-3.5 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -52,9 +55,9 @@ function MessageBubble({ message, onRegenerate, canRegenerate, onBranch, index }
 
   if (isUser) {
     return (
-      <div className="flex justify-end gap-3 animate-fade-in-up relative group">
-        <div className="max-w-[70%] rounded-2xl rounded-br-md px-4 py-3 bg-gradient-to-br from-gray-100 to-gray-50 dark:from-gray-700 dark:to-gray-750 text-gray-900 dark:text-gray-100 shadow-sm border border-gray-200/40 dark:border-gray-600/30">
-          <p className="whitespace-pre-wrap text-sm leading-relaxed">{message.content}</p>
+      <div className="flex justify-end gap-3 relative group">
+        <div className="sky-user-bubble">
+          <p className="whitespace-pre-wrap">{message.content}</p>
         </div>
       </div>
     );
@@ -62,24 +65,18 @@ function MessageBubble({ message, onRegenerate, canRegenerate, onBranch, index }
 
   const hasContent = message.parts.length > 0 || message.content;
 
-  // Reset step counter for each message
-  resetStepCounter();
-
   return (
-    <div className="flex justify-start gap-3 animate-fade-in-up relative group">
+    <div className="flex justify-start gap-3 relative group/message">
       <div className="flex-shrink-0 mt-1">
-        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 dark:from-blue-600 dark:to-indigo-700 flex items-center justify-center shadow-md shadow-blue-500/20">
-          <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
-          </svg>
-        </div>
+        <SkyMark className="sky-brand-mark size-8" />
       </div>
-      <div className="group/message min-w-0 max-w-[calc(100%-3rem)]">
+      <div className="min-w-0 max-w-[calc(100%-3rem)]">
+        <RagSourceProvider trace={message.parts.find((part) => part.type === 'rag')?.trace}>
         <div className="text-gray-900 dark:text-gray-100">
           {!hasContent && <StreamingSkeleton />}
           {message.parts.length > 0 ? (
             message.parts.map((part: MessagePart, i: number) => (
-              <MessagePartRenderer key={i} part={part} />
+              <MessagePartRenderer key={i} part={part} stepNumber={message.parts.slice(0, i + 1).filter((p) => p.type === 'step-start').length} />
             ))
           ) : (
             message.content && (
@@ -87,12 +84,12 @@ function MessageBubble({ message, onRegenerate, canRegenerate, onBranch, index }
             )
           )}
         </div>
-        <div className="flex items-center gap-0.5 mt-1.5 opacity-0 group-hover/message:opacity-100 transition-opacity duration-200">
+        </RagSourceProvider>
+        <div className="sky-message-actions">
           <CopyButton content={message.content} />
           {canRegenerate && onRegenerate && (
             <button
               onClick={onRegenerate}
-              className="p-1.5 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 transition-all"
               title="重新生成"
             >
               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -103,7 +100,6 @@ function MessageBubble({ message, onRegenerate, canRegenerate, onBranch, index }
           {onBranch && (
             <button
               onClick={() => onBranch(index)}
-              className="flex items-center gap-1 px-2 py-1 text-xs text-gray-400 hover:text-blue-600 dark:text-gray-500 dark:hover:text-blue-400 rounded-md hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-all"
               title="从这里继续"
             >
               <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -120,13 +116,27 @@ function MessageBubble({ message, onRegenerate, canRegenerate, onBranch, index }
 
 export function MessageList({ messages, onRegenerate, canRegenerate, onBranch }: MessageListProps) {
   const parentRef = useRef<HTMLDivElement>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const [showScrollButton, setShowScrollButton] = useState(false);
-  const isUserScrolledUp = useRef(false);
+  const following = useRef(true);
+  const previousScrollTop = useRef(0);
+  const frame = useRef<number | null>(null);
+  const lastUserId = useRef<string | undefined>(undefined);
+  const touchY = useRef(0);
 
-  const isFirstScroll = useRef(true);
-  const isFirstScrollSettled = useRef(false);
+  const pinToBottom = useCallback(() => {
+    const el = parentRef.current;
+    if (!el || !following.current) return;
+    el.scrollTop = el.scrollHeight;
+    previousScrollTop.current = el.scrollTop;
+  }, []);
+  const schedulePin = useCallback(() => {
+    if (frame.current !== null) cancelAnimationFrame(frame.current);
+    frame.current = requestAnimationFrame(() => { frame.current = null; pinToBottom(); });
+  }, [pinToBottom]);
 
+  // React Compiler must not memoize the virtualizer's mutable measurements.
+  // eslint-disable-next-line react-hooks/incompatible-library
   const virtualizer = useVirtualizer({
     count: messages.length,
     getScrollElement: () => parentRef.current,
@@ -140,62 +150,65 @@ export function MessageList({ messages, onRegenerate, canRegenerate, onBranch }:
       return 400;
     },
     overscan: 5,
+    getItemKey: (index) => messages[index].id,
   });
 
-  const scrollToBottom = useCallback((instant = false) => {
-    if (instant) {
-      const el = parentRef.current;
-      if (el) el.scrollTop = el.scrollHeight;
-    } else {
-      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-    }
-    isUserScrolledUp.current = false;
+  useLayoutEffect(() => {
+    virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, _delta, instance) => !following.current && item.end < (instance.scrollOffset ?? 0);
+  }, [virtualizer]);
+
+  const scrollToBottom = useCallback(() => {
+    following.current = true;
+    pinToBottom();
+    schedulePin();
     setShowScrollButton(false);
-  }, []);
+  }, [pinToBottom, schedulePin]);
 
   const handleScroll = useCallback(() => {
     const el = parentRef.current;
     if (!el) return;
-    const threshold = 150;
-    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
-    isUserScrolledUp.current = !atBottom;
-    setShowScrollButton(!atBottom);
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 32;
+    // A growing answer changes scrollHeight without expressing user intent.
+    if (el.scrollTop < previousScrollTop.current - 2) following.current = false;
+    else if (atBottom) following.current = true;
+    previousScrollTop.current = el.scrollTop;
+    setShowScrollButton(!following.current && !atBottom);
   }, []);
 
-  // First scroll: useLayoutEffect runs synchronously before paint → no visible flash
   useLayoutEffect(() => {
-    if (messages.length === 0) return;
-    if (!isFirstScroll.current) return;
-    isFirstScroll.current = false;
+    const newestUser = [...messages].reverse().find((m) => m.role === 'user')?.id;
+    if (newestUser !== lastUserId.current) { following.current = true; lastUserId.current = newestUser; setShowScrollButton(false); }
+    pinToBottom();
+    schedulePin();
+  }, [messages, pinToBottom, schedulePin]);
 
-    scrollToBottom(true);
-    // Re-scroll after virtualizer measures actual element sizes
-    requestAnimationFrame(() => {
-      scrollToBottom(true);
-      isFirstScrollSettled.current = true;
-    });
-  }, [messages, scrollToBottom]);
-
-  // Streaming scroll: useEffect runs after paint, fine for incremental content
   useEffect(() => {
-    if (messages.length === 0) return;
-    if (!isFirstScrollSettled.current) return; // first scroll not yet settled
-    if (isUserScrolledUp.current) return;
-    scrollToBottom();
-  }, [messages, scrollToBottom]);
+    const observer = new ResizeObserver(schedulePin);
+    if (contentRef.current) observer.observe(contentRef.current);
+    if (parentRef.current) observer.observe(parentRef.current);
+    return () => { observer.disconnect(); if (frame.current !== null) cancelAnimationFrame(frame.current); };
+  }, [schedulePin]);
 
   if (messages.length === 0) return null;
 
   return (
-    <div className="flex-1 relative">
+    <div className="flex-1 min-h-0 relative">
       <div
         ref={parentRef}
         onScroll={handleScroll}
-        className="absolute inset-0 overflow-y-auto"
-        style={{ overflowAnchor: 'auto' }}
+        onWheel={(e) => { if (e.deltaY < 0) { following.current = false; setShowScrollButton(true); } }}
+        onTouchStart={(e) => { touchY.current = e.touches[0].clientY; }}
+        onTouchMove={(e) => { if (e.touches[0].clientY > touchY.current + 3) { following.current = false; setShowScrollButton(true); } touchY.current = e.touches[0].clientY; }}
+        onKeyDown={(e) => { if (['ArrowUp', 'PageUp', 'Home'].includes(e.key)) { following.current = false; setShowScrollButton(true); } }}
+        tabIndex={0}
+        role="region"
+        aria-label="聊天记录"
+        className="absolute inset-0 overflow-y-auto sky-message-viewport"
+        style={{ overflowAnchor: 'none', overscrollBehavior: 'contain', scrollBehavior: 'auto' }}
       >
         <div className="max-w-3xl mx-auto py-4 px-4 lg:px-6">
           <div
+            ref={contentRef}
             style={{
               height: `${virtualizer.getTotalSize()}px`,
               width: '100%',
@@ -230,7 +243,6 @@ export function MessageList({ messages, onRegenerate, canRegenerate, onBranch }:
               );
             })}
           </div>
-          <div ref={bottomRef} />
         </div>
       </div>
       <ScrollToBottom visible={showScrollButton} onClick={scrollToBottom} />
