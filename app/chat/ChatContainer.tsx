@@ -1,677 +1,391 @@
 "use client";
 
 import { useRef, useEffect, useCallback, useState } from "react";
+import { ArrowDownToLine, BookOpen, Check, ChevronDown, Globe2, History, LoaderCircle, Menu, MoreHorizontal, Share2, X } from "lucide-react";
+import { KnowledgePanel } from './components/KnowledgePanel';
 import { ChatInput } from "./components/ChatInput";
-import type { FileAttachment } from "./components/ChatInput";
 import { MessageList } from "./components/MessageList";
-import { ThinkingIndicator } from "./components/ThinkingIndicator";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import { useChatStore } from '@/store/useChatStore';
+import { useChatStore, type Message, type MessagePart } from "@/store/useChatStore";
 import { SSEParser } from "@/lib/sse-parser";
 import { parseAIStreamChunk, handleStreamChunk, type StreamCallbacks } from "@/lib/ai-stream";
 import { StreamBuffer } from "@/lib/stream-buffer";
 import { SSEPerformanceTracker, startAutoFlush } from "@/lib/monitor";
-import type { Message, MessagePart } from "@/store/useChatStore";
-
-interface SessionData {
-  id: string;
-  title: string;
-  updatedAt: string;
-  _count?: { messages: number };
-}
+import { ALLOWED_MODELS, DEFAULT_MODEL, isValidModel } from "@/lib/models";
+import type { ChatSession } from "@/lib/chat-types";
 
 interface ChatContainerProps {
   sessionId: string;
   isNewSession?: boolean;
-  onSessionCreated?: (session: SessionData) => void;
+  onSessionCreated?: (session: ChatSession) => void;
+  onSessionUpdated?: (id: string, count: number) => void;
+  onOpenSidebar?: () => void;
+  preview?: boolean;
 }
 
-import { ALLOWED_MODELS, DEFAULT_MODEL } from "@/lib/models";
+const SUGGESTIONS = [
+  { title: "润色文字", prompt: "帮我润色一段文字，让表达更清晰、自然。请先问我文字内容和使用场景。" },
+  { title: "排查代码", prompt: "我遇到了一个编程问题，请帮我逐步排查。先问我使用的语言、预期结果和当前问题。" },
+  { title: "解释概念", prompt: "我想学习一个新概念。请先问我想了解的主题，再用通俗的语言和例子解释。" },
+];
 
-const STORAGE_KEY = 'sky-chat-model';
-const SEARCH_STORAGE_KEY = 'sky-chat-search';
-
-function getSavedModel(): string {
-  if (typeof window === 'undefined') return DEFAULT_MODEL;
-  return localStorage.getItem(STORAGE_KEY) || DEFAULT_MODEL;
+type SavedMessage = { id: string; role: string; content: string; parts?: MessagePart[] | null };
+function restoreMessages(data: SavedMessage[]): Message[] {
+  return data.map((message) => ({ id: message.id, role: message.role as Message["role"], content: message.content, parts: message.parts?.length ? message.parts : message.role === "assistant" ? [{ type: "text", text: message.content, state: "done" }] : [] }));
 }
 
-function getSavedSearchEnabled(): boolean {
-  if (typeof window === 'undefined') return false;
-  return localStorage.getItem(SEARCH_STORAGE_KEY) === 'true';
-}
-
-export function ChatContainer({ sessionId, isNewSession, onSessionCreated }: ChatContainerProps) {
-  const status = useChatStore((s) => s.status);
-  const messages = useChatStore((s) => s.messages);
-  const setStatus = useChatStore((s) => s.setStatus);
-  const setError = useChatStore((s) => s.setError);
-  const setMessages = useChatStore((s) => s.setMessages);
-  const addMessage = useChatStore((s) => s.addMessage);
-  const startAssistantMessage = useChatStore((s) => s.startAssistantMessage);
-  const appendTextToMessage = useChatStore((s) => s.appendTextToMessage);
-  const addReasoningPart = useChatStore((s) => s.addReasoningPart);
-  const appendReasoningDelta = useChatStore((s) => s.appendReasoningDelta);
-  const addToolPart = useChatStore((s) => s.addToolPart);
-  const updateToolInput = useChatStore((s) => s.updateToolInput);
-  const updateToolOutput = useChatStore((s) => s.updateToolOutput);
-  const updateToolError = useChatStore((s) => s.updateToolError);
-  const finalizeCurrentMessage = useChatStore((s) => s.finalizeCurrentMessage);
-  const reset = useChatStore((s) => s.reset);
-
-  const bufferRef = useRef<StreamBuffer | null>(null);
-  const abortControllerRef = useRef<AbortController | null>(null);
-  const sseTrackerRef = useRef<SSEPerformanceTracker | null>(null);
-  const toolInputBufRef = useRef<Map<string, string>>(new Map());
-  const [shareToast, setShareToast] = useState<string | null>(null);
-  const persistedSessionId = useRef<string | null>(null);
+export function ChatContainer({ sessionId, isNewSession, onSessionCreated, onSessionUpdated, onOpenSidebar, preview = false }: ChatContainerProps) {
+  const { status, messages, error } = useChatStore();
+  const [draft, setDraft] = useState("");
   const [model, setModel] = useState(DEFAULT_MODEL);
-  const [showModelPicker, setShowModelPicker] = useState(false);
-  const modelPickerRef = useRef<HTMLDivElement>(null);
   const [searchEnabled, setSearchEnabled] = useState(false);
-  const [showSearchHistory, setShowSearchHistory] = useState(false);
-  const searchHistoryRef = useRef<HTMLDivElement>(null);
+  const [knowledgeOpen, setKnowledgeOpen] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const selectedRef = useRef<string[]>([]);
+  const [scopeState, setScopeState] = useState<'loading' | 'ready' | 'error'>(isNewSession ? 'ready' : 'loading');
+  const [menu, setMenu] = useState<"model" | "history" | "actions" | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  const [historyState, setHistoryState] = useState<"loading" | "ready" | "error">(isNewSession ? "ready" : "loading");
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const toolbarRef = useRef<HTMLDivElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const bufferRef = useRef<StreamBuffer | null>(null);
+  const persistedSessionId = useRef<string | null>(null);
+  const persistedIds = useRef(new Map<string, string>());
+  const replacementId = useRef<string | undefined>(undefined);
+  const mounted = useRef(false);
+  const sending = useRef(false);
+  const busy = status === "thinking" || status === "answering" || status === "tool_calling";
 
   useEffect(() => {
-    setModel(getSavedModel());
-    setSearchEnabled(getSavedSearchEnabled());
-  }, []);
-
-  useEffect(() => {
+    mounted.current = true;
     const flush = startAutoFlush();
-    return () => {
-      flush.stop();
-      bufferRef.current?.destroy();
-      abortControllerRef.current?.abort();
-    };
+    // Synchronize browser preferences after hydration; storage may be unavailable.
+    const timer = window.setTimeout(() => {
+      try {
+        const savedModel = localStorage.getItem("sky-chat-model");
+        if (savedModel && isValidModel(savedModel)) setModel(savedModel);
+        setSearchEnabled(localStorage.getItem("sky-chat-search") === "true");
+      } catch { /* Defaults remain usable in private/restricted browsers. */ }
+    }, 0);
+    return () => { mounted.current = false; clearTimeout(timer); flush.stop(); abortRef.current?.abort(); bufferRef.current?.destroy(); };
   }, []);
 
-  // Load messages for persisted sessions
   useEffect(() => {
-    if (!sessionId || isNewSession) return;
-    // Store already has messages from streaming (temp→real transition), skip re-fetch
-    if (messages.length > 0) return;
-    fetch(`/api/message?sessionId=${sessionId}`)
-      .then((res) => res.json())
-      .then((data: Array<{ id: string; role: string; content: string; parts?: MessagePart[] | null }>) => {
-        const msgs: Message[] = data.map((m) => {
-          // Use persisted parts if available, otherwise recreate from content (backwards compat)
-          if (m.parts && m.parts.length > 0) {
-            return {
-              id: m.id,
-              role: m.role as 'user' | 'assistant',
-              content: m.content,
-              parts: m.parts as MessagePart[],
-            };
-          }
-          return {
-            id: m.id,
-            role: m.role as 'user' | 'assistant',
-            content: m.content,
-            parts: m.role === 'assistant'
-              ? [{ type: 'text' as const, text: m.content, state: 'done' as const }]
-              : [],
-          };
-        });
-        setMessages(msgs);
-      });
-  }, [sessionId, isNewSession, setMessages, messages.length]);
+    if (isNewSession || persistedSessionId.current === sessionId) return;
+    const controller = new AbortController();
+    fetch(`/api/message?sessionId=${encodeURIComponent(sessionId)}`, { signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("加载失败");
+        const data: SavedMessage[] = await response.json();
+        if (!Array.isArray(data)) throw new Error("消息格式错误");
+        if (!controller.signal.aborted) {
+          useChatStore.getState().setMessages(restoreMessages(data));
+          setHistoryState("ready");
+        }
+      }).catch(() => { if (!controller.signal.aborted) setHistoryState("error"); });
+    return () => controller.abort();
+  }, [sessionId, isNewSession, loadAttempt]);
 
-  // Reset ref when switching sessions
   useEffect(() => {
-    persistedSessionId.current = null;
-  }, [sessionId]);
-
-  // Close model picker / search history on outside click
-  useEffect(() => {
-    if (!showModelPicker && !showSearchHistory) return;
-    const handler = (e: MouseEvent) => {
-      if (showModelPicker && modelPickerRef.current && !modelPickerRef.current.contains(e.target as Node)) {
-        setShowModelPicker(false);
+    if (isNewSession || persistedSessionId.current === sessionId) return;
+    const controller = new AbortController();
+    fetch(`/api/knowledge?sessionId=${encodeURIComponent(sessionId)}`, { signal: controller.signal }).then(async (response) => {
+      const data = await response.json();
+      if (!response.ok) throw new Error('资料范围加载失败');
+      if (!controller.signal.aborted) {
+        const ids = Array.isArray(data.selectedIds) ? data.selectedIds : [];
+        selectedRef.current = ids; setSelectedIds(ids); setScopeState('ready');
       }
-      if (showSearchHistory && searchHistoryRef.current && !searchHistoryRef.current.contains(e.target as Node)) {
-        setShowSearchHistory(false);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [showModelPicker, showSearchHistory]);
+    }).catch(() => { if (!controller.signal.aborted) setScopeState('error'); });
+    return () => controller.abort();
+  }, [sessionId, isNewSession, loadAttempt]);
 
-  const handleModelChange = useCallback((newModel: string) => {
-    setModel(newModel);
-    localStorage.setItem(STORAGE_KEY, newModel);
-    setShowModelPicker(false);
-  }, []);
-
-  const handleSearchToggle = useCallback(() => {
-    setSearchEnabled((prev) => {
-      const next = !prev;
-      localStorage.setItem(SEARCH_STORAGE_KEY, next.toString());
-      return next;
-    });
-  }, []);
-
-  const saveMessage = useCallback(async (sid: string, role: "user" | "assistant", content: string, parts?: MessagePart[]) => {
-    await fetch("/api/message", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionId: sid, role, content, parts }),
-    });
-  }, []);
-
-  const createSessionAndSave = useCallback(async (msgs: { role: string; content: string; parts?: MessagePart[] }[]) => {
-    const title = msgs[0]?.content?.slice(0, 50) || "新对话";
-    const res = await fetch("/api/session", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title, messages: msgs }),
-    });
-    if (!res.ok) {
-      const errorData = await res.json().catch(() => ({}));
-      throw new Error(errorData.error || `Session create failed: ${res.status}`);
+  const selectDocuments = useCallback(async (ids: string[]) => {
+    if (preview) throw new Error('请登录后使用资料库');
+    const sid = persistedSessionId.current || (!isNewSession ? sessionId : null);
+    if (sid) {
+      const response = await fetch(`/api/session/${sid}/documents`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ documentIds: ids }) });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || '资料范围保存失败');
     }
-    return await res.json();
+    selectedRef.current = ids; setSelectedIds(ids);
+  }, [isNewSession, sessionId, preview]);
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = window.setTimeout(() => setToast(null), 3500);
+    return () => clearTimeout(timer);
+  }, [toast]);
+
+  useEffect(() => {
+    if (!menu) return;
+    const clickOutside = (event: MouseEvent) => { if (!toolbarRef.current?.contains(event.target as Node)) setMenu(null); };
+    const escape = (event: KeyboardEvent) => { if (event.key === "Escape") setMenu(null); };
+    document.addEventListener("mousedown", clickOutside);
+    document.addEventListener("keydown", escape);
+    return () => { document.removeEventListener("mousedown", clickOutside); document.removeEventListener("keydown", escape); };
+  }, [menu]);
+
+  const saveMessage = useCallback(async (sid: string, message: Message, signal?: AbortSignal, replaceMessageId?: string) => {
+    const response = await fetch("/api/message", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionId: sid, role: message.role, content: message.content, parts: message.parts.filter((part) => part.type !== "step-start"), replaceMessageId }), signal });
+    if (!response.ok) throw new Error("消息保存失败，请稍后重试");
+    const saved: { id: string } = await response.json();
+    persistedIds.current.set(message.id, saved.id);
   }, []);
 
-  const streamRequest = useCallback(async (
-    apiMessages: { role: string; content: string }[],
-    assistantId: string,
-    firstUserContent: string,
-    currentModel: string,
-    searchEnabled: boolean,
-  ) => {
-    const effectiveSessionId = persistedSessionId.current || sessionId;
-    const tracker = new SSEPerformanceTracker({ sessionId: effectiveSessionId });
-    tracker.start();
-    sseTrackerRef.current = tracker;
+  const createSession = useCallback(async (history: Message[], signal?: AbortSignal) => {
+    const response = await fetch("/api/session", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: history[0]?.content.slice(0, 50) || "新对话", messages: history.map(({ role, content, parts }) => ({ role, content, parts })), documentIds: selectedRef.current }), signal });
+    if (!response.ok) throw new Error("对话保存失败，请稍后重试");
+    return await response.json() as ChatSession & { messages: SavedMessage[] };
+  }, []);
 
+  const runStream = useCallback(async (apiMessages: { role: string; content: string }[], sid: string, assistantId: string, controller: AbortController, replaceMessageId?: string) => {
+    const tracker = new SSEPerformanceTracker({ sessionId: sid });
+    tracker.start();
     const buffer = new StreamBuffer();
     bufferRef.current = buffer;
-
-    buffer.onFlush((combinedDelta) => {
-      // 直接按消息 ID 追加，不依赖 currentAssistantId
-      appendTextToMessage(assistantId, combinedDelta);
-    });
-
-    const abortController = new AbortController();
-    abortControllerRef.current = abortController;
-
+    buffer.onFlush((delta) => { if (mounted.current) useChatStore.getState().appendTextToMessage(assistantId, delta); });
+    const toolInputs = new Map<string, string>();
+    let finished = false;
+    let failure: string | null = null;
+    const state = useChatStore.getState;
     const callbacks: StreamCallbacks = {
-      onTextStart: () => {
-        setStatus('answering');
-        tracker.onPhaseChange('answering');
-      },
-      onTextDelta: (_id, delta) => {
-        buffer.push(delta);
-        tracker.onChunk();
-      },
-      onTextEnd: () => { buffer.forceFlush(); },
-      onReasoningStart: () => { addReasoningPart(assistantId); },
-      onReasoningDelta: (_id, delta) => { appendReasoningDelta(delta); },
-      onReasoningEnd: () => {},
-      onToolInputStart: (toolCallId, toolName) => {
-        setStatus('tool_calling');
-        tracker.onPhaseChange('tool_calling');
-        addToolPart({ toolCallId, toolName, state: 'input-streaming' });
-        toolInputBufRef.current.set(toolCallId, '');
-      },
-      onToolInputDelta: (toolCallId, delta) => {
-        const buf = toolInputBufRef.current;
-        const acc = (buf.get(toolCallId) || '') + delta;
-        buf.set(toolCallId, acc);
-        updateToolInput(toolCallId, acc, 'input-streaming');
-      },
-      onToolInputAvailable: (toolCallId, toolName, input) => {
-        toolInputBufRef.current.delete(toolCallId);
-        updateToolInput(toolCallId, input, 'input-available');
-      },
-      onToolOutputAvailable: (toolCallId, output) => {
-        updateToolOutput(toolCallId, output);
-        setStatus('answering');
-      },
-      onToolOutputError: (toolCallId, errorText) => {
-        updateToolError(toolCallId, errorText);
-        setStatus('answering');
-      },
-      onStepStart: () => {
-        // 确保当前消息的状态正确，为下一步文本做准备
-        // 不创建新消息，所有文本合并到同一条消息
-        buffer.forceFlush();
-      },
-      onFinish: async () => {
-        buffer.forceFlush();
-        finalizeCurrentMessage();
-        setStatus('idle');
-
-        const state = useChatStore.getState();
-        const assistantMsg = state.messages.find((m) => m.id === assistantId);
-        if (!assistantMsg) { tracker.finish(); return; }
-
-        const persistableParts = assistantMsg.parts.filter(p => p.type !== 'step-start');
-
-        if (isNewSession && !persistedSessionId.current) {
-          try {
-            const session = await createSessionAndSave([
-              { role: 'user', content: firstUserContent },
-              { role: 'assistant', content: assistantMsg.content, parts: persistableParts },
-            ]);
-            persistedSessionId.current = session.id;
-            onSessionCreated?.({
-              id: session.id,
-              title: session.title,
-              updatedAt: new Date().toISOString(),
-              _count: { messages: 2 },
-            });
-          } catch (e) {
-            console.error('Failed to create session:', e);
-          }
-        } else {
-          const sid = persistedSessionId.current || sessionId;
-          await saveMessage(sid, "assistant", assistantMsg.content, persistableParts);
-        }
-        tracker.finish();
-        sseTrackerRef.current = null;
-      },
-      onError: (errorText) => {
-        buffer.forceFlush();
-        finalizeCurrentMessage();
-        setError(errorText);
-      },
-      onAbort: () => {
-        buffer.forceFlush();
-        finalizeCurrentMessage();
-        reset();
-      },
+      onRagTrace: (trace) => { buffer.forceFlush(); state().updateRagTrace(assistantId, trace); },
+      onTextReplace: (text) => { buffer.forceFlush(); state().replaceAssistantText(assistantId, text); },
+      onTextStart: () => { state().setStatus("answering"); tracker.onPhaseChange("answering"); },
+      onTextDelta: (_id, delta) => { buffer.push(delta); tracker.onChunk(); },
+      onTextEnd: () => buffer.forceFlush(),
+      onReasoningStart: () => state().addReasoningPart(assistantId),
+      onReasoningDelta: (_id, delta) => state().appendReasoningDelta(delta),
+      onToolInputStart: (toolCallId, toolName) => { state().setStatus("tool_calling"); tracker.onPhaseChange("tool_calling"); state().addToolPart({ toolCallId, toolName, state: "input-streaming" }); toolInputs.set(toolCallId, ""); },
+      onToolInputDelta: (id, delta) => { const input = (toolInputs.get(id) || "") + delta; toolInputs.set(id, input); state().updateToolInput(id, input, "input-streaming"); },
+      onToolInputAvailable: (id, _name, input) => { toolInputs.delete(id); state().updateToolInput(id, input, "input-available"); },
+      onToolOutputAvailable: (id, output) => { state().updateToolOutput(id, output); state().setStatus("answering"); },
+      onToolOutputError: (id, text) => { state().updateToolError(id, text); state().setStatus("answering"); },
+      onStepStart: () => buffer.forceFlush(),
+      onFinish: () => { finished = true; },
+      onError: (text) => { failure = text || "生成失败，请重试"; },
+      onAbort: () => { controller.abort(); },
     };
 
     try {
-      const response = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          messages: apiMessages,
-          model: currentModel,
-          searchEnabled,
-        }),
-        signal: abortController.signal,
-      });
-
-      if (!response.ok) throw new Error(`HTTP error: ${response.status}`);
-
-      const reader = response.body?.getReader();
+      const response = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionId: sid, messages: apiMessages.slice(-40), model, searchEnabled }), signal: controller.signal });
+      if (!response.ok) {
+        const data = await response.json().catch(() => null);
+        throw new Error(response.status === 401 ? "登录已过期，请重新登录" : data?.error || `请求失败（${response.status}），请重试`);
+      }
+      if (!response.body) throw new Error("没有收到回复，请重试");
+      const reader = response.body.getReader();
       const decoder = new TextDecoder();
-      const sseParser = new SSEParser();
-
-      if (reader) {
-        while (true) {
+      const parser = new SSEParser();
+      try {
+        while (!finished && !failure && !controller.signal.aborted) {
           const { done, value } = await reader.read();
-          if (done) break;
-          const chunk = decoder.decode(value, { stream: true });
-          const events = sseParser.parse(chunk);
+          if (!mounted.current || controller.signal.aborted) break;
+          const events = parser.parse(done ? decoder.decode() : decoder.decode(value, { stream: true }));
           for (const event of events) {
-            const streamChunk = parseAIStreamChunk(event.data);
-            if (streamChunk) handleStreamChunk(streamChunk, callbacks);
+            const chunk = parseAIStreamChunk(event.data);
+            if (chunk) handleStreamChunk(chunk, callbacks);
+            if (finished || failure || controller.signal.aborted) break;
           }
+          if (done) break;
+        }
+      } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
+      if (!finished && !failure && !controller.signal.aborted) failure = "连接中断，已保留收到的内容。你可以重试。";
+    } catch (cause) {
+      if (!controller.signal.aborted) failure = cause instanceof Error ? cause.message : "网络连接失败，请重试";
+    } finally {
+      if (mounted.current) {
+        buffer.forceFlush();
+        state().finalizeCurrentMessage();
+        const trace = state().messages.find((item) => item.id === assistantId)?.parts.find((part) => part.type === 'rag');
+        if (trace?.type === 'rag' && trace.trace.status === 'running') state().updateRagTrace(assistantId, { ...trace.trace, status: controller.signal.aborted ? 'cancelled' : 'failed', error: controller.signal.aborted ? '已停止生成' : '连接中断，执行记录可能不完整' });
+        const message = state().messages.find((item) => item.id === assistantId);
+        if (message && !message.content && !message.parts.length) {
+          state().setMessages(state().messages.filter((item) => item.id !== assistantId));
+        }
+        if (message && (message.content || message.parts.length)) {
+          try {
+            // A user-requested stop still saves the partial answer.
+            await saveMessage(sid, message, undefined, replaceMessageId);
+            replacementId.current = undefined;
+            if (mounted.current) onSessionUpdated?.(sid, state().messages.length);
+          } catch { if (mounted.current) setToast("回复已保留在当前页面，但保存失败，请复制备份。"); }
+        }
+        if (mounted.current) {
+          if (failure) state().setError(failure);
+          else state().setStatus("idle");
         }
       }
-    } catch (error: unknown) {
-      if (error instanceof DOMException && error.name === 'AbortError') return;
-      console.error("Stream error:", error);
-      buffer.forceFlush();
-      finalizeCurrentMessage();
-      setError('网络错误，请重试');
-    } finally {
       buffer.destroy();
-      bufferRef.current = null;
-      abortControllerRef.current = null;
+      if (bufferRef.current === buffer) bufferRef.current = null;
+      if (abortRef.current === controller) abortRef.current = null;
+      sending.current = false;
+      void tracker.finish();
     }
-  }, [
-    sessionId, isNewSession, onSessionCreated, searchEnabled,
-    setStatus, setError, startAssistantMessage,
-    appendTextToMessage, addReasoningPart, appendReasoningDelta, addToolPart,
-    updateToolInput, updateToolOutput, updateToolError, finalizeCurrentMessage, reset,
-    saveMessage, createSessionAndSave,
-  ]);
+  }, [model, searchEnabled, saveMessage, onSessionUpdated]);
 
-  const handleSend = useCallback(async (text: string, file?: FileAttachment) => {
-    const effectiveId = persistedSessionId.current || sessionId;
-    const displayContent = text || `[文件: ${file?.fileName || 'unknown'}]`;
-
-    let apiUserContent = text;
-    if (file) {
-      apiUserContent = `【用户上传了文件: ${file.fileName}】\n文件内容:\n${file.textContent.slice(0, 50000)}\n\n用户问题: ${text || '请分析这个文件'}`;
-    }
-
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      role: "user",
-      content: displayContent,
-      parts: [],
-    };
-
-    if (!isNewSession || persistedSessionId.current) {
-      // Save after adding to store so user sees message immediately
-      addMessage(userMessage);
-      setStatus('thinking');
-      await saveMessage(effectiveId, "user", userMessage.content);
-    } else {
-      addMessage(userMessage);
-      setStatus('thinking');
-    }
-
-    const assistantId = (Date.now() + 1).toString();
-    startAssistantMessage(assistantId);
-
-    // Build API messages from the current store, override last user message with full context
-    const state = useChatStore.getState();
-    const allMessages = state.messages;
-    const apiMessages = allMessages
-      .filter((m) => m.role === 'user' || (m.role === 'assistant' && m.content))
-      .map((m) => ({ role: m.role, content: m.content }));
-
-    if (apiMessages.length > 0) {
-      apiMessages[apiMessages.length - 1].content = apiUserContent;
-    } else {
-      apiMessages.push({ role: 'user', content: apiUserContent });
-    }
-
-    await streamRequest(apiMessages, assistantId, apiUserContent, model, searchEnabled);
-  }, [
-    isNewSession, sessionId, addMessage, saveMessage,
-    setStatus, startAssistantMessage, streamRequest, model, searchEnabled,
-  ]);
-
-  const handleRegenerate = useCallback(async () => {
-    const state = useChatStore.getState();
-    const msgs = state.messages;
-    const lastUserIdx = msgs.length - 2;
-    if (lastUserIdx < 0 || msgs[lastUserIdx]?.role !== 'user') return;
-
-    const msgsWithoutLast = msgs.slice(0, -1);
-    setMessages(msgsWithoutLast);
-    setStatus('thinking');
-
-    const assistantId = (Date.now() + 1).toString();
-    startAssistantMessage(assistantId);
-
-    const apiMessages = msgsWithoutLast
-      .filter((m) => m.role === 'user' || (m.role === 'assistant' && m.content))
-      .map((m) => ({ role: m.role, content: m.content }));
-
-    await streamRequest(apiMessages, assistantId, msgs[lastUserIdx]?.content || "", model, searchEnabled);
-  }, [setMessages, setStatus, startAssistantMessage, streamRequest, model, searchEnabled]);
-
-  const handleBranch = useCallback((messageIndex: number) => {
-    const state = useChatStore.getState();
-    const msgs = state.messages.slice(0, messageIndex + 1);
-    setMessages(msgs);
-    setStatus('idle');
-    setError(null);
-  }, [setMessages, setStatus, setError]);
-
-  const handleStop = useCallback(() => {
-    abortControllerRef.current?.abort();
-    bufferRef.current?.forceFlush();
-    finalizeCurrentMessage();
-    reset();
-  }, [finalizeCurrentMessage, reset]);
-
-  const handleShare = useCallback(async () => {
-    const sid = persistedSessionId.current || sessionId;
-    if (isNewSession && !persistedSessionId.current) {
-      setShareToast('请等待消息发送完成后再分享');
-      setTimeout(() => setShareToast(null), 3000);
-      return;
-    }
+  const handleSend = useCallback(async (text: string) => {
+    if (preview) throw new Error("这是界面预览，请登录后开始真实对话。");
+    if (sending.current || historyState !== "ready") throw new Error("请等待当前操作完成");
+    if (scopeState !== 'ready') throw new Error('资料范围尚未加载，请重试加载，避免遗漏已选资料');
+    const ids = [...selectedRef.current];
+    if (ids.length > 12) throw new Error('最多同时选择 12 个文件，请先移除部分资料');
+    sending.current = true;
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const previous = useChatStore.getState().messages;
+    const userMessage: Message = { id: `local_${crypto.randomUUID()}`, role: "user", content: text, parts: [] };
+    const state = useChatStore.getState;
+    state().setError(null);
+    state().addMessage(userMessage);
+    state().setStatus("thinking");
     try {
-      const res = await fetch("/api/share", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId: sid }),
-      });
-      const data = await res.json();
-      if (data.url) {
-        const fullUrl = `${window.location.origin}${data.url}`;
-        await navigator.clipboard.writeText(fullUrl);
-        setShareToast('分享链接已复制到剪贴板！');
-        setTimeout(() => setShareToast(null), 3000);
+      await selectDocuments(ids);
+      let sid = persistedSessionId.current || (!isNewSession ? sessionId : null);
+      if (!sid) {
+        const session = await createSession([...previous.filter((message) => message.content || message.parts.length), userMessage], controller.signal);
+        sid = session.id;
+        persistedSessionId.current = sid;
+        if (mounted.current && !controller.signal.aborted) onSessionCreated?.(session);
+      } else { await saveMessage(sid, userMessage, controller.signal); }
+      if (!mounted.current || controller.signal.aborted) {
+        sending.current = false;
+        if (mounted.current) state().setStatus("idle");
+        return;
       }
-    } catch {
-      setShareToast('分享失败，请重试');
-      setTimeout(() => setShareToast(null), 3000);
+      onSessionUpdated?.(sid, state().messages.length);
+      const apiMessages = [...previous, userMessage].filter((message) => message.role === "user" || message.content).map(({ role, content }) => ({ role, content }));
+      replacementId.current = undefined;
+      const assistantId = `local_${crypto.randomUUID()}`;
+      state().startAssistantMessage(assistantId);
+      void runStream(apiMessages, sid, assistantId, controller);
+    } catch (cause) {
+      sending.current = false;
+      if (mounted.current) {
+        state().setMessages(previous);
+        state().setStatus("idle");
+      }
+      if (!controller.signal.aborted) throw cause;
     }
-  }, [sessionId, isNewSession]);
+  }, [historyState, scopeState, isNewSession, sessionId, createSession, saveMessage, onSessionCreated, onSessionUpdated, runStream, preview, selectDocuments]);
 
-  // --- Welcome state (centered input) ---
-  if (isNewSession && messages.length === 0) {
-    return (
-      <div className="flex flex-col h-full bg-white dark:bg-gray-900 relative">
-        {/* Top bar: model picker + actions */}
-        <div className="flex items-center justify-between px-4 py-2 border-b border-gray-100 dark:border-gray-800">
-          <div className="relative" ref={modelPickerRef}>
-            <button
-              onClick={() => setShowModelPicker(!showModelPicker)}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
-              </svg>
-              {ALLOWED_MODELS.find(m => m.id === model)?.name || model}
-            </button>
-            {showModelPicker && (
-              <div className="absolute top-full left-0 mt-1.5 w-48 bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm border border-gray-200/60 dark:border-gray-700/40 rounded-xl shadow-xl z-50 py-1.5">
-                {ALLOWED_MODELS.map((m) => (
-                  <button
-                    key={m.id}
-                    onClick={() => handleModelChange(m.id)}
-                    className={`w-full text-left px-4 py-2.5 text-sm transition-all rounded-lg mx-0.5 ${
-                      model === m.id
-                        ? 'text-gray-900 dark:text-gray-100 bg-blue-50 dark:bg-blue-900/30 font-medium'
-                        : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700/50'
-                    }`}
-                    style={{ width: 'calc(100% - 4px)' }}
-                  >
-                    <div className="flex items-center gap-2">
-                      {model === m.id && (
-                        <svg className="w-3.5 h-3.5 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                        </svg>
-                      )}
-                      <span>{m.name}</span>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-          <button
-            onClick={handleSearchToggle}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg transition-all ${
-              searchEnabled
-                ? 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 border border-blue-200/40 dark:border-blue-700/30'
-                : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 border border-transparent'
-            }`}
-            title={searchEnabled ? '搜索已开启' : '搜索已关闭'}
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z" />
-            </svg>
-            <span>搜索</span>
-          </button>
-          <ThemeToggle />
-        </div>
+  const handleRegenerate = useCallback(() => {
+    if (sending.current || historyState !== "ready" || scopeState !== 'ready') return;
+    const state = useChatStore.getState();
+    const lastUser = state.messages.findLastIndex((message) => message.role === "user");
+    const sid = persistedSessionId.current || (!isNewSession ? sessionId : null);
+    if (lastUser < 0 || !sid) return;
+    const oldAnswer = state.messages[lastUser + 1];
+    if (oldAnswer) replacementId.current = persistedIds.current.get(oldAnswer.id) || (!oldAnswer.id.startsWith("local_") ? oldAnswer.id : replacementId.current);
+    const history = state.messages.slice(0, lastUser + 1);
+    state.setMessages(history);
+    state.setError(null);
+    state.setStatus("thinking");
+    const assistantId = `local_${crypto.randomUUID()}`;
+    state.startAssistantMessage(assistantId);
+    const controller = new AbortController();
+    abortRef.current = controller;
+    sending.current = true;
+    void runStream(history.filter((message) => message.content).map(({ role, content }) => ({ role, content })), sid, assistantId, controller, replacementId.current);
+  }, [historyState, scopeState, isNewSession, sessionId, runStream]);
 
-        <div className="flex-1 flex flex-col items-center justify-center px-4 relative">
-          {/* Background gradient */}
-          <div className="absolute inset-0 bg-gradient-to-b from-blue-50/30 via-transparent to-transparent dark:from-blue-950/10 dark:via-transparent pointer-events-none" />
-          <div className="relative text-center mb-8 max-w-md">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 shadow-lg shadow-blue-500/20 mb-6">
-              <svg className="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
-              </svg>
-            </div>
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2 bg-gradient-to-r from-gray-900 to-gray-700 dark:from-gray-100 dark:to-gray-300 bg-clip-text text-transparent">
-              Sky Chat
-            </h1>
-            <p className="text-gray-500 dark:text-gray-400 text-sm">
-              有什么可以帮助你的？
-            </p>
-          </div>
-          <ChatInput onSend={handleSend} centered />
-        </div>
-      </div>
-    );
-  }
+  const handleBranch = async (index: number) => {
+    if (sending.current) return;
+    sending.current = true;
+    const controller = new AbortController();
+    abortRef.current = controller;
+    useChatStore.getState().setStatus("thinking");
+    try {
+      const session = await createSession(useChatStore.getState().messages.slice(0, index + 1), controller.signal);
+      if (!mounted.current || controller.signal.aborted) return;
+      persistedSessionId.current = session.id;
+      persistedIds.current.clear();
+      replacementId.current = undefined;
+      useChatStore.getState().setMessages(restoreMessages(session.messages));
+      onSessionCreated?.(session);
+      setToast("已创建分支对话，可以从这里继续。");
+    } catch { if (mounted.current && !controller.signal.aborted) setToast("创建分支失败，请重试。"); }
+    finally { sending.current = false; if (mounted.current) useChatStore.getState().setStatus("idle"); }
+  };
 
-  // --- Normal chat state ---
+  const handleShare = async () => {
+    const sid = persistedSessionId.current || (!isNewSession ? sessionId : null);
+    if (!sid || busy) { setToast("请等待对话保存完成后再分享。"); return; }
+    try {
+      const response = await fetch("/api/share", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionId: sid }) });
+      const data = await response.json();
+      if (!response.ok || !data.url) throw new Error();
+      await navigator.clipboard.writeText(new URL(data.url, window.location.origin).href);
+      setToast("分享链接已复制。");
+    } catch { setToast("分享失败，请重试并允许剪贴板访问。"); }
+  };
+
+  const handleExport = () => {
+    const content = `# Sky Chat\n\n${messages.filter((message) => message.content).map((message) => `## ${message.role === "user" ? "你" : "Sky Chat"}\n\n${message.content}`).join("\n\n---\n\n")}`;
+    const url = URL.createObjectURL(new Blob([content], { type: "text/markdown;charset=utf-8" }));
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `SkyChat-${new Date().toISOString().slice(0, 10)}.md`;
+    anchor.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  const searches = messages.flatMap((message) => message.parts.flatMap((part) => part.type === "tool" && part.tool.toolName === "webSearch" && part.tool.state === "output-available" ? [part.tool] : []));
+  const welcome = messages.length === 0 && historyState === "ready";
+
   return (
-    <div className="flex flex-col h-full bg-white dark:bg-gray-900 relative">
-      {shareToast && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 bg-gray-900/90 dark:bg-gray-700/90 backdrop-blur-sm text-white text-sm rounded-xl shadow-xl animate-fade-in-up border border-gray-700/20 dark:border-gray-600/30">
-          {shareToast}
+    <div className="sky-chat">
+      <header className="sky-toolbar" ref={toolbarRef}>
+        <div className="flex min-w-0 items-center gap-2">
+          <button onClick={onOpenSidebar} className="sky-icon-button sky-mobile-menu" aria-label="打开侧栏"><Menu size={20} /></button>
+          <div className="relative">
+            <button onClick={() => setMenu(menu === "model" ? null : "model")} className="sky-model-button" aria-expanded={menu === "model"} aria-controls="model-picker"><span className="size-1.5 rounded-full bg-teal-600" /><span className="sky-model-label">{ALLOWED_MODELS.find((item) => item.id === model)?.name || model}</span><ChevronDown size={14} /></button>
+            {menu === "model" && <div id="model-picker" className="sky-popover left-0 min-w-52" aria-label="选择模型">{ALLOWED_MODELS.map((item) => <button key={item.id} aria-pressed={item.id === model} onClick={() => { setModel(item.id); setMenu(null); try { localStorage.setItem("sky-chat-model", item.id); } catch {} }} className="flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left text-xs hover:bg-teal-50 dark:hover:bg-teal-900/30">{item.name}{item.id === model && <Check size={15} className="text-teal-600" />}</button>)}</div>}
+          </div>
         </div>
-      )}
-
-      {/* Top bar: model picker + actions */}
-      <div className="flex items-center justify-between px-4 py-2 border-b border-gray-100 dark:border-gray-800">
-        <div className="relative" ref={modelPickerRef}>
-          <button
-            onClick={() => setShowModelPicker(!showModelPicker)}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
-            </svg>
-            {ALLOWED_MODELS.find(m => m.id === model)?.name || model}
-          </button>
-          {showModelPicker && (
-            <div className="absolute top-full left-0 mt-1.5 w-48 bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm border border-gray-200/60 dark:border-gray-700/40 rounded-xl shadow-xl z-50 py-1.5">
-              {ALLOWED_MODELS.map((m) => (
-                <button
-                  key={m.id}
-                  onClick={() => handleModelChange(m.id)}
-                  className={`w-full text-left px-4 py-2.5 text-sm transition-all rounded-lg mx-0.5 ${
-                    model === m.id
-                      ? 'text-gray-900 dark:text-gray-100 bg-blue-50 dark:bg-blue-900/30 font-medium'
-                      : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700/50'
-                  }`}
-                  style={{ width: 'calc(100% - 4px)' }}
-                >
-                  <div className="flex items-center gap-2">
-                    {model === m.id && (
-                      <svg className="w-3.5 h-3.5 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                      </svg>
-                    )}
-                    <span>{m.name}</span>
-                  </div>
-                </button>
-              ))}
+        <div className="flex items-center gap-1 sm:gap-2">
+          <button className="sky-knowledge-toggle" disabled={busy} onClick={() => preview ? setToast('请登录后使用文件与知识库。') : setKnowledgeOpen(true)} aria-label="文件与知识库"><BookOpen size={17} /><span className="hidden sm:inline">资料</span>{selectedIds.length > 0 && <span className="sky-scope-count">{selectedIds.length}</span>}</button>
+          <button onClick={() => { const enabled = !searchEnabled; setSearchEnabled(enabled); try { localStorage.setItem("sky-chat-search", String(enabled)); } catch {} }} aria-pressed={searchEnabled} className={`sky-search-toggle ${searchEnabled ? "is-active" : ""}`} title="联网搜索"><Globe2 size={15} /><span className="hidden sm:inline">联网搜索</span><span className="sky-switch" /></button>
+          <span className="mx-1 h-4 border-l border-black/10 dark:border-white/10" />
+          {searches.length > 0 && <div className="relative"><button className="sky-icon-button" onClick={() => setMenu(menu === "history" ? null : "history")} aria-label="搜索记录" aria-expanded={menu === "history"}><History size={17} /></button>{menu === "history" && <div className="sky-popover right-0 max-h-72 w-64 overflow-y-auto"><p className="p-2 text-xs text-gray-400">本次搜索记录</p>{searches.map((tool) => <p key={tool.toolCallId} className="break-words border-t border-gray-100 px-2 py-3 text-xs dark:border-gray-800">{(tool.input as { query?: string })?.query || "搜索"}</p>)}</div>}</div>}
+          {messages.length > 0 && <>
+            <button onClick={handleExport} className="sky-icon-button sky-desktop-action" aria-label="导出对话" title="导出 Markdown"><ArrowDownToLine size={17} /></button>
+            <button onClick={() => void handleShare()} disabled={busy} className="sky-icon-button sky-desktop-action" aria-label="分享对话" title="分享对话"><Share2 size={17} /></button>
+            <div className="sky-overflow-actions relative">
+              <button onClick={() => setMenu(menu === "actions" ? null : "actions")} className="sky-icon-button" aria-label="更多对话操作" aria-expanded={menu === "actions"} aria-controls="conversation-actions"><MoreHorizontal size={20} /></button>
+              {menu === "actions" && <div id="conversation-actions" className="sky-popover right-0 w-48" aria-label="对话操作">
+                <button onClick={() => { setMenu(null); handleExport(); }} className="flex w-full items-center gap-3 rounded-lg px-3 py-2" aria-label="导出对话"><ArrowDownToLine size={17} />导出对话</button>
+                <button onClick={() => { setMenu(null); void handleShare(); }} disabled={busy} className="flex w-full items-center gap-3 rounded-lg px-3 py-2 disabled:opacity-50" aria-label="分享对话"><Share2 size={17} />分享对话</button>
+              </div>}
             </div>
-          )}
-        </div>
-
-        <div className="flex items-center gap-1">
-          <button
-            onClick={handleSearchToggle}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg transition-all ${
-              searchEnabled
-                ? 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 border border-blue-200/40 dark:border-blue-700/30'
-                : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 border border-transparent'
-            }`}
-            title={searchEnabled ? '搜索已开启' : '搜索已关闭'}
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z" />
-            </svg>
-            <span>搜索</span>
-          </button>
+          </>}
           <ThemeToggle />
-          {messages.length > 0 && (() => {
-            const searches: Array<{ toolCallId: string; toolName: string; input?: unknown; output?: unknown; state: string }> = [];
-            for (const m of messages) {
-              if (m.role !== 'assistant') continue;
-              for (const p of m.parts) {
-                if (p.type === 'tool' && p.tool.toolName === 'webSearch' && p.tool.state === 'output-available') {
-                  searches.push(p.tool);
-                }
-              }
-            }
-            if (searches.length === 0) return null;
-            return (
-              <div className="relative" ref={searchHistoryRef}>
-                <button
-                  onClick={() => setShowSearchHistory(!showSearchHistory)}
-                  className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors relative"
-                  title="搜索历史"
-                >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-blue-500 text-white text-[10px] rounded-full flex items-center justify-center">
-                    {searches.length}
-                  </span>
-                </button>
-                {showSearchHistory && (
-                  <div className="absolute top-full right-0 mt-1.5 w-80 bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm border border-gray-200/60 dark:border-gray-700/40 rounded-xl shadow-xl z-50 py-1.5 max-h-80 overflow-y-auto scrollbar-thin">
-                    <div className="px-4 py-2 text-xs text-gray-400 dark:text-gray-500 border-b border-gray-100/60 dark:border-gray-700/40 font-medium">
-                      本次搜索记录
-                    </div>
-                    {searches.map((tool, i) => (
-                      <div key={i} className="px-4 py-2.5 hover:bg-gray-50/80 dark:hover:bg-gray-700/40 border-b border-gray-50/60 dark:border-gray-700/20 last:border-0 transition-colors">
-                        <div className="text-xs text-gray-900 dark:text-gray-100 font-medium truncate">
-                          {(tool.input as Record<string, string>)?.query || '搜索'}
-                        </div>
-                        <div className="text-xs text-gray-400 dark:text-gray-500 truncate mt-0.5">
-                          {typeof tool.output === 'string'
-                            ? tool.output.slice(0, 80) + (tool.output.length > 80 ? '...' : '')
-                            : '已获取搜索结果'}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })()}
-          {messages.length > 0 && (
-            <button onClick={handleShare} className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors" title="分享">
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
-              </svg>
-            </button>
-          )}
         </div>
-      </div>
-
-      {/* Stop button */}
-      {status !== 'idle' && (
-        <div className="absolute top-14 left-1/2 -translate-x-1/2 z-10 animate-fade-in-up">
-          <button
-            onClick={handleStop}
-            className="px-4 py-2 text-sm text-red-600 dark:text-red-400 bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm border border-red-200/60 dark:border-red-700/40 rounded-full shadow-lg shadow-red-500/5 hover:bg-red-50 dark:hover:bg-red-900/20 hover:border-red-300 dark:hover:border-red-600/50 transition-all flex items-center gap-2 active:scale-95"
-          >
-            <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
-              <rect x="6" y="6" width="12" height="12" rx="2" />
-            </svg>
-            停止生成
-          </button>
+      </header>
+      {selectedIds.length > 0 && <div className="sky-active-scope"><BookOpen size={14} /><span>正在使用 {selectedIds.length} 个文件回答</span><button disabled={busy} onClick={() => setKnowledgeOpen(true)}>查看范围</button><button disabled={busy} onClick={() => void selectDocuments([]).catch(() => setToast('资料范围保存失败，请重试。'))}>清空</button></div>}
+      {scopeState === 'error' && <div role="alert" className="sky-active-scope">资料范围加载失败，发送已暂停。<button onClick={() => { setScopeState('loading'); setLoadAttempt((v) => v + 1); }}>重新加载</button></div>}
+      <KnowledgePanel open={knowledgeOpen} onClose={() => setKnowledgeOpen(false)} selectedIds={selectedIds} onSelect={selectDocuments} disabled={busy} />
+      {toast && <div role="status" className="sky-toast">{toast}<button onClick={() => setToast(null)} aria-label="关闭提示"><X size={14} /></button></div>}
+      {historyState !== "ready" ? <div className="flex flex-1 flex-col items-center justify-center gap-4 text-sm text-gray-500">{historyState === "loading" ? <><LoaderCircle className="animate-spin text-teal-600" size={24} />正在找回这段对话…</> : <><p>暂时无法加载对话，请检查网络后重试。</p><button className="sky-model-button" onClick={() => { setHistoryState("loading"); setLoadAttempt((attempt) => attempt + 1); }}>重新加载</button></>}</div> : welcome ? (
+        <div className="sky-welcome scrollbar-thin">
+          <div className="sky-welcome-inner">
+            <h1 className="sky-welcome-title">今天，想聊点什么？</h1>
+            <p className="sky-welcome-description">写作、编程，或一个突然冒出的疑问。</p>
+            <ChatInput value={draft} onChange={setDraft} onSend={handleSend} busy={busy} disabled={scopeState !== 'ready'} onStop={() => abortRef.current?.abort()} centered />
+            <div className="sky-quick-prompts" aria-label="快捷提问">{SUGGESTIONS.map(({ title, prompt }) => <button key={title} aria-pressed={draft === prompt} onClick={() => { setDraft(prompt); document.querySelector<HTMLTextAreaElement>("textarea[aria-label='输入消息']")?.focus(); }} className="sky-quick-prompt">{title}</button>)}</div>
+          </div>
+          <p className="sky-welcome-footer">AI 生成的内容可能有误，请核实重要信息。</p>
         </div>
-      )}
-
-      {/* Message list */}
-      {messages.length === 0 ? (
-        <div className="flex-1" />
       ) : (
-        <MessageList
-          messages={messages}
-          onRegenerate={handleRegenerate}
-          canRegenerate={status === 'idle' && messages.length >= 2}
-          onBranch={handleBranch}
-        />
+        <>
+          <MessageList messages={messages} onRegenerate={handleRegenerate} canRegenerate={!busy && scopeState === 'ready'} onBranch={busy ? undefined : (index) => void handleBranch(index)} />
+          <div role="status" aria-live="polite" className="mx-auto w-full max-w-3xl px-6 text-[11px] text-gray-400">{busy && <span className="inline-flex items-center gap-2 py-2"><span className="size-1.5 animate-pulse rounded-full bg-teal-500" />{status === "thinking" ? "正在思考…" : status === "tool_calling" ? "正在使用工具…" : "正在回复…"}</span>}</div>
+          {error && <div role="alert" className="mx-auto flex w-full max-w-3xl items-center justify-between gap-3 px-6 py-3 text-xs text-red-600 dark:text-red-400"><span>{error}</span><button onClick={handleRegenerate} className="shrink-0 underline">重试</button></div>}
+          <ChatInput value={draft} onChange={setDraft} onSend={handleSend} busy={busy} disabled={historyState !== "ready" || scopeState !== 'ready'} onStop={() => abortRef.current?.abort()} />
+        </>
       )}
-      <ThinkingIndicator />
-      <ChatInput onSend={handleSend} disabled={status !== 'idle'} />
     </div>
   );
 }

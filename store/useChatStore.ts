@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import type { RagTrace } from '@/lib/rag/types';
 
 export type ChatStatus = 'idle' | 'thinking' | 'tool_calling' | 'answering' | 'error';
 
@@ -32,7 +33,8 @@ export interface StepStartPart {
   type: 'step-start';
 }
 
-export type MessagePart = TextPart | ReasoningPart | ToolPart | StepStartPart;
+export interface RagPart { type: 'rag'; trace: RagTrace }
+export type MessagePart = TextPart | ReasoningPart | ToolPart | StepStartPart | RagPart;
 
 export interface Message {
   id: string;
@@ -49,6 +51,8 @@ interface ChatState {
 
   setStatus: (status: ChatStatus) => void;
   setMessages: (messages: Message[]) => void;
+  updateRagTrace: (messageId: string, trace: RagTrace) => void;
+  replaceAssistantText: (messageId: string, text: string) => void;
   addMessage: (message: Message) => void;
   appendTextDelta: (delta: string) => void;
   appendTextToMessage: (messageId: string, delta: string) => void;
@@ -82,6 +86,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
   setStatus: (status) => set({ status }),
 
   setMessages: (messages) => set({ messages }),
+
+  updateRagTrace: (messageId, trace) => set((state) => ({ messages: state.messages.map((m) => m.id !== messageId ? m : { ...m, parts: [...m.parts.filter((p) => p.type !== 'rag'), { type: 'rag' as const, trace }] }) })),
+  replaceAssistantText: (messageId, text) => set((state) => ({ messages: state.messages.map((m) => m.id !== messageId ? m : { ...m, content: text, parts: [...m.parts.filter((p) => p.type !== 'text'), { type: 'text' as const, text, state: 'done' as const }] }) })),
 
   addMessage: (message) => set((state) => ({
     messages: [...state.messages, message],
@@ -281,7 +288,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     });
   },
 
-  setError: (error) => set({ error, status: 'error' }),
+  setError: (error) => set({ error, status: error ? 'error' : 'idle' }),
 
   reset: () => set({ status: 'idle', error: null, messages: [], currentAssistantId: null }),
 }));

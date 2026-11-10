@@ -14,6 +14,13 @@ model User {
   password  String
   role      String    @default("user")
   sessions  Session[]
+  knowledgeBases KnowledgeBase[]
+  documents Document[]
+  agentRuns AgentRun[]
+  groupMemberships GroupMembership[]
+  documentGrants DocumentUserGrant[]
+  embeddingCaches EmbeddingCache[]
+  ragVectorCaches RagVectorCache[]
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 }
@@ -25,6 +32,8 @@ model Session {
   title       String    @default("新对话")
   shareToken  String?   @unique
   messages    Message[]
+  documents SessionDocument[]
+  agentRuns AgentRun[]
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 }
@@ -53,4 +62,288 @@ model MonitorMetric {
 
   @@index([type])
   @@index([timestamp])
+}
+
+model KnowledgeBase {
+  id String @id @default(cuid())
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name String
+  published Boolean @default(false)
+  visibility String @default("public")
+  chunkingStrategy String @default("recursive")
+  groupGrants KnowledgeGroupGrant[]
+  documents Document[]
+  createdAt DateTime @default(now())
+  @@index([userId])
+}
+
+model Document {
+  id String @id @default(uuid())
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  knowledgeBaseId String?
+  knowledgeBase KnowledgeBase? @relation(fields: [knowledgeBaseId], references: [id], onDelete: SetNull)
+  name String
+  mediaType String
+  size Int
+  hash String
+  status String @default("queued")
+  error String?
+  chunkCount Int @default(0)
+  embeddingModel String?
+  pipelineProfile String?
+  activeGenerationId String?
+  pendingGenerationId String?
+  generations RagGeneration[]
+  visibility String @default("inherit")
+  tags String[] @default([])
+  progress Int @default(0)
+  ingestionMetrics Json @default("{}")
+  groupGrants DocumentGroupGrant[]
+  userGrants DocumentUserGrant[]
+  checkpoint IngestionCheckpoint?
+  familyId String @default(uuid())
+  revision Int @default(1)
+  isCurrent Boolean @default(true)
+  replacesId String?
+  chunks Chunk[]
+  job IngestionJob?
+  sessions SessionDocument[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([userId, createdAt])
+  @@index([knowledgeBaseId])
+  @@unique([familyId, revision])
+}
+
+model Chunk {
+  id String @id @default(uuid())
+  documentId String
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  ordinal Int
+  text String
+  page Int?
+  heading String?
+  embedding Unsupported("vector(1024)")?
+  kind String @default("leaf")
+  parentId String?
+  parent Chunk? @relation("ChunkHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
+  children Chunk[] @relation("ChunkHierarchy")
+  textHash String?
+  searchText String @default("")
+  searchVector Unsupported("tsvector")? @default(dbgenerated())
+  generationId String?
+  generation RagGeneration? @relation(fields: [generationId], references: [id], onDelete: Cascade)
+  @@unique([documentId, generationId, ordinal])
+  @@index([parentId])
+  @@index([generationId])
+}
+
+model SessionDocument {
+  sessionId String
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  documentId String
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  @@id([sessionId, documentId])
+}
+
+model IngestionJob {
+  id String @id @default(uuid())
+  documentId String @unique
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  status String @default("queued")
+  attempts Int @default(0)
+  leasedBy String?
+  heartbeatAt DateTime?
+  availableAt DateTime @default(now())
+  errorCode String?
+  lastError String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([status, createdAt])
+  @@index([status, availableAt])
+}
+
+model AccessGroup {
+  id String @id @default(cuid())
+  name String
+  parentId String?
+  parent AccessGroup? @relation("GroupTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children AccessGroup[] @relation("GroupTree")
+  members GroupMembership[]
+  knowledgeGrants KnowledgeGroupGrant[]
+  documentGrants DocumentGroupGrant[]
+  ancestors GroupClosure[] @relation("GroupDescendant")
+  descendants GroupClosure[] @relation("GroupAncestor")
+  @@index([parentId])
+}
+model GroupClosure {
+  ancestorId String
+  descendantId String
+  ancestor AccessGroup @relation("GroupAncestor", fields: [ancestorId], references: [id], onDelete: Cascade)
+  descendant AccessGroup @relation("GroupDescendant", fields: [descendantId], references: [id], onDelete: Cascade)
+  @@id([ancestorId, descendantId])
+  @@index([descendantId])
+}
+model GroupMembership {
+  userId String
+  groupId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group AccessGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  @@id([userId, groupId])
+}
+model KnowledgeGroupGrant {
+  knowledgeBaseId String
+  groupId String
+  knowledgeBase KnowledgeBase @relation(fields: [knowledgeBaseId], references: [id], onDelete: Cascade)
+  group AccessGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  @@id([knowledgeBaseId, groupId])
+}
+model DocumentGroupGrant {
+  documentId String
+  groupId String
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  group AccessGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  @@id([documentId, groupId])
+}
+model DocumentUserGrant {
+  documentId String
+  userId String
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@id([documentId, userId])
+}
+model EmbeddingCache {
+  userId String
+  profile String
+  hash String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  embedding Unsupported("vector(1024)")
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+  @@id([userId, profile, hash])
+  @@index([expiresAt])
+}
+model IngestionCheckpoint {
+  documentId String @id
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  profile String
+  sections Json
+  createdAt DateTime @default(now())
+}
+
+model AgentRun {
+  id String @id @default(uuid())
+  sessionId String
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  model String
+  status String @default("running")
+  question String
+  trace Json @default("{}")
+  steps AgentStep[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([userId, sessionId, createdAt])
+}
+
+model AgentStep {
+  id String @id @default(uuid())
+  runId String
+  run AgentRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  ordinal Int
+  tool String
+  query String
+  status String
+  durationMs Int
+  result Json
+  createdAt DateTime @default(now())
+  @@unique([runId, ordinal])
+}
+
+model RagGeneration {
+  id String @id @default(uuid())
+  documentId String
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  profile String
+  strategy String
+  epoch Int @default(1)
+  stage String @default("parse")
+  status String @default("queued")
+  progress Int @default(0)
+  metrics Json @default("{}")
+  error String?
+  stages RagStage[]
+  outbox RagOutbox[]
+  deadLetters RagDeadLetter[]
+  chunks Chunk[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([documentId, createdAt])
+  @@index([status, updatedAt])
+}
+model RagStage {
+  id String @id @default(uuid())
+  generationId String
+  generation RagGeneration @relation(fields: [generationId], references: [id], onDelete: Cascade)
+  stage String
+  status String @default("pending")
+  attempts Int @default(0)
+  leaseToken String?
+  leaseUntil DateTime?
+  errorCode String?
+  lastError String?
+  durationMs Int?
+  artifactToken String?
+  completedAt DateTime?
+  @@unique([generationId, stage])
+}
+model RagOutbox {
+  id String @id @default(uuid())
+  generationId String
+  generation RagGeneration @relation(fields: [generationId], references: [id], onDelete: Cascade)
+  topic String
+  key String
+  payload Json
+  status String @default("queued")
+  availableAt DateTime @default(now())
+  leaseToken String?
+  leaseUntil DateTime?
+  attempts Int @default(0)
+  lastError String?
+  createdAt DateTime @default(now())
+  sentAt DateTime?
+  @@index([status, availableAt])
+}
+model RagDeadLetter {
+  id String @id @default(uuid())
+  generationId String
+  generation RagGeneration @relation(fields: [generationId], references: [id], onDelete: Cascade)
+  eventId String @unique
+  stage String
+  payload Json
+  errorCode String
+  message String
+  attempts Int
+  createdAt DateTime @default(now())
+  replayedAt DateTime?
+  @@index([generationId, createdAt])
+}
+model RagVectorCache {
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  profile String
+  hash String
+  vector Bytes
+  expiresAt DateTime
+  @@id([userId, profile, hash])
+  @@index([expiresAt])
+}
+model RagIndexCleanup {
+  generationId String @id
+  availableAt DateTime @default(now())
+  attempts Int @default(0)
+  createdAt DateTime @default(now())
 }

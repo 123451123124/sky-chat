@@ -1,4 +1,8 @@
+import type { RagTrace } from './rag/types';
+
 export type StreamChunkType =
+  | 'rag-trace'
+  | 'text-replace'
   | 'text-start'
   | 'text-delta'
   | 'text-end'
@@ -33,6 +37,8 @@ export function parseAIStreamChunk(data: string): StreamChunk | null {
 }
 
 export interface StreamCallbacks {
+  onRagTrace?: (trace: RagTrace) => void;
+  onTextReplace?: (text: string) => void;
   onTextDelta?: (id: string, delta: string) => void;
   onTextStart?: (id: string) => void;
   onTextEnd?: (id: string) => void;
@@ -52,6 +58,12 @@ export interface StreamCallbacks {
 
 export function handleStreamChunk(chunk: StreamChunk, callbacks: StreamCallbacks) {
   switch (chunk.type) {
+    case 'rag-trace':
+      callbacks.onRagTrace?.(chunk.trace as RagTrace);
+      break;
+    case 'text-replace':
+      callbacks.onTextReplace?.(chunk.text as string);
+      break;
     case 'text-start':
       callbacks.onTextStart?.(chunk.id as string);
       break;

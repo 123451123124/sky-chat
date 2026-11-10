@@ -1,0 +1,161 @@
+{
+  "checkedAt": "2026-10-20",
+  "method": "Git shallow tree; public GitHub API was rate limited",
+  "repositories": [
+    {
+      "repo": "nageoffer/ragent",
+      "commit": "ff93871ab88fff24a5dac7feee7ea342359a3439",
+      "inspectedFiles": [
+        {
+          "path": "LICENSE",
+          "url": "https://raw.githubusercontent.com/nageoffer/ragent/ff93871ab88fff24a5dac7feee7ea342359a3439/LICENSE",
+          "sha256": "27f545e67602d343f9e8db9fff7f8b4819e7a31829f9fab0ee94a7cf013b2565",
+          "lines": 201
+        },
+        {
+          "path": "pom.xml",
+          "url": "https://raw.githubusercontent.com/nageoffer/ragent/ff93871ab88fff24a5dac7feee7ea342359a3439/pom.xml",
+          "sha256": "a8f62119fdecaa4ccd64ed3a4cbc5d36889f299b26807437e6e8e63563db2338",
+          "lines": 316
+        },
+        {
+          "path": "rag/src/main/java/com/nageoffer/ai/ragent/rag/core/retrieval/postprocessor/FusionPostProcessor.java",
+          "url": "https://raw.githubusercontent.com/nageoffer/ragent/ff93871ab88fff24a5dac7feee7ea342359a3439/rag/src/main/java/com/nageoffer/ai/ragent/rag/core/retrieval/postprocessor/FusionPostProcessor.java",
+          "sha256": "7488ed3a75a623fa77b3452230e0a23a5fbb78a566ef6c9295fb14e3af3ea046",
+          "lines": 163
+        },
+        {
+          "path": "rag/src/main/java/com/nageoffer/ai/ragent/rag/core/retrieval/MultiChannelRetrievalEngine.java",
+          "url": "https://raw.githubusercontent.com/nageoffer/ragent/ff93871ab88fff24a5dac7feee7ea342359a3439/rag/src/main/java/com/nageoffer/ai/ragent/rag/core/retrieval/MultiChannelRetrievalEngine.java",
+          "sha256": "2e25499fb70877af438f2f5acede0096ff5f5aba218297acc26f50dbb3672eca",
+          "lines": 286
+        },
+        {
+          "path": "rag/src/main/java/com/nageoffer/ai/ragent/ingestion/engine/IngestionEngine.java",
+          "url": "https://raw.githubusercontent.com/nageoffer/ragent/ff93871ab88fff24a5dac7feee7ea342359a3439/rag/src/main/java/com/nageoffer/ai/ragent/ingestion/engine/IngestionEngine.java",
+          "sha256": "82cd155e4203a2579ff555a4e79385e02561aaf801dc319c2a1f2245ef2bd8f0",
+          "lines": 269
+        },
+        {
+          "path": "rag/src/main/java/com/nageoffer/ai/ragent/core/chunk/ChunkingService.java",
+          "url": "https://raw.githubusercontent.com/nageoffer/ragent/ff93871ab88fff24a5dac7feee7ea342359a3439/rag/src/main/java/com/nageoffer/ai/ragent/core/chunk/ChunkingService.java",
+          "sha256": "455565473a7e8ee934f905460d639eb14d5b0c718f6234afb84425414516692a",
+          "lines": 70
+        },
+        {
+          "path": "rag/src/main/java/com/nageoffer/ai/ragent/knowledge/mq/KnowledgeDocumentChunkConsumer.java",
+          "url": "https://raw.githubusercontent.com/nageoffer/ragent/ff93871ab88fff24a5dac7feee7ea342359a3439/rag/src/main/java/com/nageoffer/ai/ragent/knowledge/mq/KnowledgeDocumentChunkConsumer.java",
+          "sha256": "0ece1cdcb9bd7a03a4c2242d1b1f47ff86a062ba7c72fe16bf360551a09705ed",
+          "lines": 59
+        }
+      ],
+      "licenseObserved": "Apache-2.0",
+      "starsApproxOnGithubPage": 4300,
+      "commitTime": "2026-10-15T23:07:15+08:00",
+      "fileCount": 1530
+    },
+    {
+      "repo": "YunaiV/ruoyi-vue-pro",
+      "commit": "ac022b15a094cf9cf82903d429b9729e72309da5",
+      "inspectedFiles": [
+        {
+          "path": "LICENSE",
+          "url": "https://raw.githubusercontent.com/YunaiV/ruoyi-vue-pro/ac022b15a094cf9cf82903d429b9729e72309da5/LICENSE",
+          "sha256": "772daf1f82a50025a74e4066050490d875feba62a49cf0ecefa1b4cc824e9a07",
+          "lines": 20
+        },
+        {
+          "path": "yudao-module-ai/src/main/java/cn/iocoder/yudao/module/ai/service/knowledge/AiKnowledgeDocumentServiceImpl.java",
+          "url": "https://raw.githubusercontent.com/YunaiV/ruoyi-vue-pro/ac022b15a094cf9cf82903d429b9729e72309da5/yudao-module-ai/src/main/java/cn/iocoder/yudao/module/ai/service/knowledge/AiKnowledgeDocumentServiceImpl.java",
+          "sha256": "7919fef437435beae7b648d6293017f1027e3bee965f084f62c758cdbbb730a5",
+          "lines": 226
+        },
+        {
+          "path": "yudao-module-ai/src/main/java/cn/iocoder/yudao/module/ai/service/knowledge/AiKnowledgeSegmentServiceImpl.java",
+          "url": "https://raw.githubusercontent.com/YunaiV/ruoyi-vue-pro/ac022b15a094cf9cf82903d429b9729e72309da5/yudao-module-ai/src/main/java/cn/iocoder/yudao/module/ai/service/knowledge/AiKnowledgeSegmentServiceImpl.java",
+          "sha256": "d1fc084a0571d62430cc53cc473b711b8f9a77eda986f0aa1c03a0264bdca4db",
+          "lines": 509
+        },
+        {
+          "path": "yudao-framework/yudao-spring-boot-starter-security/src/main/java/cn/iocoder/yudao/framework/security/core/filter/TokenAuthenticationFilter.java",
+          "url": "https://raw.githubusercontent.com/YunaiV/ruoyi-vue-pro/ac022b15a094cf9cf82903d429b9729e72309da5/yudao-framework/yudao-spring-boot-starter-security/src/main/java/cn/iocoder/yudao/framework/security/core/filter/TokenAuthenticationFilter.java",
+          "sha256": "2b21f47234e0d56e43bb86841439ce8308cb805ac64f62396fc19ea98ab6114c",
+          "lines": 119
+        },
+        {
+          "path": "yudao-framework/yudao-spring-boot-starter-biz-data-permission/src/main/java/cn/iocoder/yudao/framework/datapermission/core/rule/dept/DeptDataPermissionRule.java",
+          "url": "https://raw.githubusercontent.com/YunaiV/ruoyi-vue-pro/ac022b15a094cf9cf82903d429b9729e72309da5/yudao-framework/yudao-spring-boot-starter-biz-data-permission/src/main/java/cn/iocoder/yudao/framework/datapermission/core/rule/dept/DeptDataPermissionRule.java",
+          "sha256": "2493d60ff288aaea1aafaef83a193f8ac79b3b93c8efc7d5e48a2df89e7b8c81",
+          "lines": 207
+        }
+      ],
+      "compatibleBranch": {
+        "branch": "master-jdk17",
+        "commit": "7c397bbfae3e768b26e3ee962c5aa7064e8d7c96",
+        "inspectedFiles": [
+          {
+            "path": "pom.xml",
+            "url": "https://raw.githubusercontent.com/YunaiV/ruoyi-vue-pro/7c397bbfae3e768b26e3ee962c5aa7064e8d7c96/pom.xml",
+            "sha256": "e77b97ee7e486be1d6ead99370b56d2d0c304801f534fa8f1e86cc229476b7b6"
+          },
+          {
+            "path": "yudao-module-ai/src/main/java/cn/iocoder/yudao/module/ai/service/knowledge/AiKnowledgeSegmentServiceImpl.java",
+            "url": "https://raw.githubusercontent.com/YunaiV/ruoyi-vue-pro/7c397bbfae3e768b26e3ee962c5aa7064e8d7c96/yudao-module-ai/src/main/java/cn/iocoder/yudao/module/ai/service/knowledge/AiKnowledgeSegmentServiceImpl.java",
+            "sha256": "d1fc084a0571d62430cc53cc473b711b8f9a77eda986f0aa1c03a0264bdca4db"
+          },
+          {
+            "path": "yudao-framework/yudao-spring-boot-starter-security/src/main/java/cn/iocoder/yudao/framework/security/core/filter/TokenAuthenticationFilter.java",
+            "url": "https://raw.githubusercontent.com/YunaiV/ruoyi-vue-pro/7c397bbfae3e768b26e3ee962c5aa7064e8d7c96/yudao-framework/yudao-spring-boot-starter-security/src/main/java/cn/iocoder/yudao/framework/security/core/filter/TokenAuthenticationFilter.java",
+            "sha256": "344bce102b6181b4a885233773d66ee106c2e739c590a08362ddfe2d3a5b3f6c"
+          }
+        ],
+        "fileCount": 8924
+      },
+      "licenseObserved": "MIT",
+      "starsApproxOnGithubPage": 39900,
+      "commitTime": "2026-10-05T22:03:59+08:00",
+      "fileCount": 8715
+    },
+    {
+      "repo": "alibaba/spring-ai-alibaba",
+      "commit": "17e26ff6fe951d605771c1845229ca3edb043634",
+      "inspectedFiles": [
+        {
+          "path": "LICENSE",
+          "url": "https://raw.githubusercontent.com/alibaba/spring-ai-alibaba/17e26ff6fe951d605771c1845229ca3edb043634/LICENSE",
+          "sha256": "90d1df0527227e8068b5a49017880767c905f14009618c012c17f5b8c50e0750",
+          "lines": 238
+        },
+        {
+          "path": "pom.xml",
+          "url": "https://raw.githubusercontent.com/alibaba/spring-ai-alibaba/17e26ff6fe951d605771c1845229ca3edb043634/pom.xml",
+          "sha256": "d6bf3c3f422a21494b56be4282173daf4ad82adcee18c8f51528ed5175f268bc",
+          "lines": 649
+        },
+        {
+          "path": "spring-ai-alibaba-agent-framework/src/main/java/com/alibaba/cloud/ai/graph/agent/ReactAgent.java",
+          "url": "https://raw.githubusercontent.com/alibaba/spring-ai-alibaba/17e26ff6fe951d605771c1845229ca3edb043634/spring-ai-alibaba-agent-framework/src/main/java/com/alibaba/cloud/ai/graph/agent/ReactAgent.java",
+          "sha256": "99b7637ea380cc4fac17642d9f89c67e896b9c92e75fe32211443209364534da",
+          "lines": 1160
+        },
+        {
+          "path": "spring-ai-alibaba-admin/spring-ai-alibaba-admin-server-core/src/main/java/com/alibaba/cloud/ai/studio/core/rag/retriever/KnowledgeBaseDocumentRetriever.java",
+          "url": "https://raw.githubusercontent.com/alibaba/spring-ai-alibaba/17e26ff6fe951d605771c1845229ca3edb043634/spring-ai-alibaba-admin/spring-ai-alibaba-admin-server-core/src/main/java/com/alibaba/cloud/ai/studio/core/rag/retriever/KnowledgeBaseDocumentRetriever.java",
+          "sha256": "8c125a14d4204bea4846183642ea628228f6c6a0d89caa62fcfe7024aa4d03b5",
+          "lines": 179
+        },
+        {
+          "path": "spring-ai-alibaba-admin/spring-ai-alibaba-admin-server-core/src/main/java/org/springframework/ai/vectorstore/elasticsearch/ElasticsearchVectorStore.java",
+          "url": "https://raw.githubusercontent.com/alibaba/spring-ai-alibaba/17e26ff6fe951d605771c1845229ca3edb043634/spring-ai-alibaba-admin/spring-ai-alibaba-admin-server-core/src/main/java/org/springframework/ai/vectorstore/elasticsearch/ElasticsearchVectorStore.java",
+          "sha256": "4ea2b59518707e8ee134a8032a6515c2669652634357f21d321f5607edc2cf66",
+          "lines": 551
+        }
+      ],
+      "licenseObserved": "Apache-2.0, with upstream MIT notices",
+      "starsApproxOnGithubPage": 11000,
+      "commitTime": "2026-10-07T21:48:56+08:00",
+      "fileCount": 3111
+    }
+  ],
+  "caveat": "Metadata and selected source inspection only; upstream code has not been built or integrated. Stars are rounded page observations, not GitHub API counts."
+}

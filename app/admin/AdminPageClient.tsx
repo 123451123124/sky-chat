@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { ManagementShell } from "./ManagementShell";
+
+import { useState, useMemo } from "react";
 import dynamic from "next/dynamic";
-import Link from "next/link";
-import { ThemeToggle } from "@/components/ThemeToggle";
+import { useTheme } from "@/components/ThemeProvider";
 
 const ReactECharts = dynamic(() => import("echarts-for-react"), { ssr: false });
 
@@ -47,6 +48,7 @@ interface AdminPageClientProps {
   users: User[];
   sessions: Session[];
   metrics: Metric[];
+  initialTab?: TabType;
 }
 
 type TabType = "overview" | "stall" | "users";
@@ -56,14 +58,6 @@ function getRequestId(m: Metric): string | null {
   return rid || null;
 }
 
-function getMetricLabel(type: string): string {
-  switch (type) {
-    case 'ttfb': return 'TTFB';
-    case 'ttlb': return 'TTLB';
-    case 'stall': return 'Stall';
-    default: return type;
-  }
-}
 
 function percentile(sorted: number[], p: number): number {
   if (sorted.length === 0) return 0;
@@ -89,32 +83,45 @@ function healthLabel(level: HealthLevel): string {
   }
 }
 
-export function AdminPageClient({ currentUser, users, sessions, metrics }: AdminPageClientProps) {
-  const [activeTab, setActiveTab] = useState<TabType>("overview");
+  function HealthCard({ label, value, unit, health, description }: {
+    label: string; value: string; unit: string; health: HealthLevel; description: string;
+  }) {
+    return (
+      <div className="sky-admin-section">
+        <div className="flex items-center justify-between mb-3">
+          <span className="text-sm text-gray-500 dark:text-gray-400">{label}</span>
+          <span className="flex items-center gap-1.5 text-xs font-medium" style={{ color: healthColor(health) }}>
+            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: healthColor(health) }} />
+            {healthLabel(health)}
+          </span>
+        </div>
+        <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+          {value}
+          <span className="text-sm font-normal text-gray-400 dark:text-gray-500 ml-1">{unit}</span>
+        </div>
+        <div className="text-xs text-gray-400 dark:text-gray-500 mt-1">{description}</div>
+      </div>
+    );
+  }
 
-  // Theme detection
-  const [isDark, setIsDark] = useState(false);
-  useEffect(() => {
-    setIsDark(document.documentElement.classList.contains('dark'));
-    const observer = new MutationObserver(() => {
-      setIsDark(document.documentElement.classList.contains('dark'));
-    });
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
-    return () => observer.disconnect();
-  }, []);
+export function AdminPageClient({ currentUser, users, sessions, metrics, initialTab = "overview" }: AdminPageClientProps) {
+  const [activeTab, setActiveTab] = useState<TabType>(initialTab);
+
+  const { theme: currentTheme } = useTheme();
+  const isDark = currentTheme === "dark";
 
   const theme = useMemo(() => ({
-    textColor: isDark ? '#9ca3af' : '#6b7280',
-    borderColor: isDark ? '#374151' : '#e5e7eb',
-    tooltipBg: isDark ? 'rgba(30,41,59,0.95)' : 'rgba(255,255,255,0.95)',
-    tooltipBorder: isDark ? '#4b5563' : '#e5e7eb',
-    axisLineColor: isDark ? '#374151' : '#e5e7eb',
-    splitLineColor: isDark ? '#1f2937' : '#f3f4f6',
+    textColor: isDark ? '#b3b3ca' : '#646477',
+    borderColor: isDark ? '#3d3d50' : '#dddde9',
+    tooltipBg: isDark ? '#23232f' : 'rgba(255,255,255,0.95)',
+    tooltipBorder: isDark ? '#4b5563' : '#dddde9',
+    axisLineColor: isDark ? '#3d3d50' : '#dddde9',
+    splitLineColor: isDark ? '#303041' : '#f3f4f6',
   }), [isDark]);
 
   // ── Data ──
-  const ttfbMetrics = useMemo(() => metrics.filter((m) => m.type === "ttfb").slice(-100), [metrics]);
-  const ttlbMetrics = useMemo(() => metrics.filter((m) => m.type === "ttlb").slice(-100), [metrics]);
+  const ttfbMetrics = useMemo(() => metrics.filter((m) => m.type === "ttfb").sort((a, b) => a.timestamp.localeCompare(b.timestamp)).slice(-100), [metrics]);
+  const ttlbMetrics = useMemo(() => metrics.filter((m) => m.type === "ttlb").sort((a, b) => a.timestamp.localeCompare(b.timestamp)).slice(-100), [metrics]);
   const stallMetrics = useMemo(() => metrics.filter((m) => m.type === "stall"), [metrics]);
   const lcpMetrics = useMemo(() => metrics.filter((m) => m.type === "lcp").slice(-50), [metrics]);
   const clsMetrics = useMemo(() => metrics.filter((m) => m.type === "cls").slice(-50), [metrics]);
@@ -248,8 +255,8 @@ export function AdminPageClient({ currentUser, users, sessions, metrics }: Admin
           symbol: 'circle',
           symbolSize: 4,
           lineStyle: { width: 2 },
-          itemStyle: { color: '#3b82f6' },
-          areaStyle: { color: 'rgba(59,130,246,0.08)' },
+          itemStyle: { color: '#7773d3' },
+          areaStyle: { color: 'rgba(119,115,211,0.08)' },
         },
         {
           name: 'TTLB',
@@ -305,7 +312,7 @@ export function AdminPageClient({ currentUser, users, sessions, metrics }: Admin
           type: 'bar' as const,
           data: [
             { value: stallBuckets['0-500ms'], itemStyle: { color: '#10b981' } },
-            { value: stallBuckets['500-1000ms'], itemStyle: { color: '#3b82f6' } },
+            { value: stallBuckets['500-1000ms'], itemStyle: { color: '#7773d3' } },
             { value: stallBuckets['1-3s'], itemStyle: { color: '#f59e0b' } },
             { value: stallBuckets['3-5s'], itemStyle: { color: '#f97316' } },
             { value: stallBuckets['5s+'], itemStyle: { color: '#ef4444' } },
@@ -364,81 +371,11 @@ export function AdminPageClient({ currentUser, users, sessions, metrics }: Admin
     };
   }, [stallMetrics, theme, groupedMetrics]);
 
-  const tabs: { key: TabType; label: string }[] = [
-    { key: "overview", label: "系统总览" },
-    { key: "stall", label: "卡顿报告" },
-    { key: "users", label: "用户管理" },
-  ];
-
-  const handleLogout = async () => {
-    await fetch("/api/auth/logout", { method: "POST" });
-    window.location.href = "/login";
-  };
-
-  function HealthCard({ label, value, unit, health, description }: {
-    label: string; value: string; unit: string; health: HealthLevel; description: string;
-  }) {
-    return (
-      <div className="bg-white dark:bg-gray-900 rounded-xl p-6 shadow-sm border border-gray-100 dark:border-gray-800">
-        <div className="flex items-center justify-between mb-3">
-          <span className="text-sm text-gray-500 dark:text-gray-400">{label}</span>
-          <span className="flex items-center gap-1.5 text-xs font-medium" style={{ color: healthColor(health) }}>
-            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: healthColor(health) }} />
-            {healthLabel(health)}
-          </span>
-        </div>
-        <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-          {value}
-          <span className="text-sm font-normal text-gray-400 dark:text-gray-500 ml-1">{unit}</span>
-        </div>
-        <div className="text-xs text-gray-400 dark:text-gray-500 mt-1">{description}</div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
-      <header className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <h1 className="text-lg font-semibold text-gray-900 dark:text-gray-100">管理后台</h1>
-        </div>
-        <div className="flex items-center gap-3">
-          <ThemeToggle />
-          <span className="text-sm text-gray-500 dark:text-gray-400">{currentUser.email}</span>
-          <Link
-            href="/chat"
-            className="px-3 py-1.5 text-sm text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg transition-colors"
-          >
-            返回聊天
-          </Link>
-          <button
-            onClick={handleLogout}
-            className="px-3 py-1.5 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"
-          >
-            退出登录
-          </button>
-        </div>
-      </header>
-
-      <div className="flex gap-1 px-6 py-3 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800">
-        {tabs.map((tab) => (
-          <button
-            key={tab.key}
-            onClick={() => setActiveTab(tab.key)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-              activeTab === tab.key
-                ? "bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900"
-                : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-
-      <main className="p-6">
-        {activeTab === "overview" && (
-          <div className="space-y-6">
+  const headings = { overview: ['运行概览', '查看会话、首字节响应与流式输出的运行情况。'], stall: ['流式性能', '从卡顿分布与请求记录中定位问题。'], users: ['账号与会话', '查看注册账号及会话使用情况。'] };
+  return <ManagementShell user={currentUser} section={activeTab} onSection={setActiveTab}>
+    <div className="sky-page-heading"><div><h1>{headings[activeTab][0]}</h1><p>{headings[activeTab][1]}</p></div><span className="sky-muted">{users.length} 个账号 · {sessions.length} 段最近会话</span></div>
+    <div className="sky-admin-data">
+        {activeTab === "overview" && (requestCount === 0 ? <div className="sky-library-empty"><h2>还没有性能采样</h2><p>完成一次聊天后，这里会显示真实的响应耗时与流式性能。<br />当前没有数据，暂不评估系统健康状态。</p></div> : <div className="space-y-6">
 
             {/* ── Row 1: System Health ── */}
             <div>
@@ -447,7 +384,7 @@ export function AdminPageClient({ currentUser, users, sessions, metrics }: Admin
                 <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium"
                   style={{ backgroundColor: healthColor(overallHealth) + '20', color: healthColor(overallHealth) }}>
                   <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: healthColor(overallHealth) }} />
-                  {overallHealth === 'good' ? '一切正常' : overallHealth === 'warning' ? '需要关注' : '需要立即处理'}
+                  {overallHealth === 'good' ? '采样指标良好' : overallHealth === 'warning' ? '需要关注' : '需要立即处理'}
                 </span>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -477,38 +414,22 @@ export function AdminPageClient({ currentUser, users, sessions, metrics }: Admin
                   value={String(requestCount)}
                   unit="次"
                   health="good"
-                  description="数据库中的监测数据总量"
+                  description="最近采样中的请求数量"
                 />
               </div>
             </div>
 
-            {/* ── Row 2: Latency Percentiles ── */}
-            <div className="bg-white dark:bg-gray-900 rounded-xl p-6 shadow-sm border border-gray-100 dark:border-gray-800">
-              <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100 mb-4">延迟百分位统计</h3>
-              <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
-                <StatBox label="P50" value={ttfbP50} unit="ms" color="#3b82f6" />
-                <StatBox label="P90" value={ttfbP90} unit="ms" color="#3b82f6" />
-                <StatBox label="P99" value={ttfbP99} unit="ms" color="#3b82f6" />
-                <div className="col-span-2 md:col-span-3 flex items-center justify-center text-sm text-gray-400 dark:text-gray-500">
-                  <span className="px-3 py-1 bg-blue-50 dark:bg-blue-900/20 rounded-md text-blue-600 dark:text-blue-400 font-medium">TTFB</span>
-                  <span className="mx-2">→</span>
-                  <span className="px-3 py-1 bg-green-50 dark:bg-green-900/20 rounded-md text-green-600 dark:text-green-400 font-medium">TTLB</span>
-                </div>
-                <StatBox label="P50" value={ttlbP50} unit="ms" color="#10b981" />
-                <StatBox label="P90" value={ttlbP90} unit="ms" color="#10b981" />
-                <StatBox label="P99" value={ttlbP99} unit="ms" color="#10b981" />
-              </div>
-            </div>
+            <section className="sky-admin-section"><h3 className="mb-4 font-semibold">延迟百分位统计</h3><div className="overflow-x-auto"><table className="sky-percentile-table"><thead><tr><th>指标</th><th>P50</th><th>P90</th><th>P99</th></tr></thead><tbody><tr><th>首字节 TTFB</th><td>{ttfbP50} ms</td><td>{ttfbP90} ms</td><td>{ttfbP99} ms</td></tr><tr><th>完整回复 TTLB</th><td>{ttlbP50} ms</td><td>{ttlbP90} ms</td><td>{ttlbP99} ms</td></tr></tbody></table></div></section>
 
             {/* ── Row 3: Performance Trend ── */}
-            <div className="bg-white dark:bg-gray-900 rounded-xl p-6 shadow-sm border border-gray-100 dark:border-gray-800">
+            <div className="sky-admin-section">
               <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100 mb-4">SSE 性能趋势</h3>
               <ReactECharts option={performanceChartOption} style={{ height: 350 }} />
             </div>
 
             {/* ── Row 4: Slow Sessions ── */}
             {sessionPerformance.length > 0 && (
-              <div className="bg-white dark:bg-gray-900 rounded-xl shadow-sm border border-gray-100 dark:border-gray-800 overflow-hidden">
+              <div className="sky-admin-section is-table">
                 <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between">
                   <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100">响应最慢的会话</h3>
                   <span className="text-xs text-gray-400 dark:text-gray-500">按平均 TTLB 降序排列</span>
@@ -567,7 +488,7 @@ export function AdminPageClient({ currentUser, users, sessions, metrics }: Admin
             {(lcpMetrics.length > 0 || clsMetrics.length > 0) && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {lcpMetrics.length > 0 && (
-                  <div className="bg-white dark:bg-gray-900 rounded-xl p-6 shadow-sm border border-gray-100 dark:border-gray-800">
+                  <div className="sky-admin-section">
                     <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100 mb-4">LCP 最大内容绘制</h3>
                     <div className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-3">
                       {Math.round(lcpMetrics.reduce((a, b) => a + b.value, 0) / lcpMetrics.length)}
@@ -584,7 +505,7 @@ export function AdminPageClient({ currentUser, users, sessions, metrics }: Admin
                   </div>
                 )}
                 {clsMetrics.length > 0 && (
-                  <div className="bg-white dark:bg-gray-900 rounded-xl p-6 shadow-sm border border-gray-100 dark:border-gray-800">
+                  <div className="sky-admin-section">
                     <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100 mb-4">CLS 累计布局偏移</h3>
                     <div className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-3">
                       {(clsMetrics.reduce((a, b) => a + b.value, 0) / clsMetrics.length).toFixed(3)}
@@ -607,12 +528,12 @@ export function AdminPageClient({ currentUser, users, sessions, metrics }: Admin
         {activeTab === "stall" && (
           <div className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div className="bg-white dark:bg-gray-900 rounded-xl p-6 shadow-sm border border-gray-100 dark:border-gray-800 text-center">
+              <div className="sky-admin-section text-center">
                 <div className="text-3xl font-bold text-red-500">{stallMetrics.length}</div>
                 <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">总卡顿次数</div>
                 <div className="text-xs text-gray-400 dark:text-gray-500 mt-1">全部会话累计</div>
               </div>
-              <div className="bg-white dark:bg-gray-900 rounded-xl p-6 shadow-sm border border-gray-100 dark:border-gray-800 text-center">
+              <div className="sky-admin-section text-center">
                 <div className="text-3xl font-bold text-orange-500">
                   {stallMetrics.length > 0
                     ? Math.round(stallMetrics.reduce((a, b) => a + b.value, 0) / stallMetrics.length)
@@ -621,24 +542,24 @@ export function AdminPageClient({ currentUser, users, sessions, metrics }: Admin
                 <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">平均卡顿时长 (ms)</div>
                 <div className="text-xs text-gray-400 dark:text-gray-500 mt-1">每次卡顿持续</div>
               </div>
-              <div className="bg-white dark:bg-gray-900 rounded-xl p-6 shadow-sm border border-gray-100 dark:border-gray-800 text-center">
+              <div className="sky-admin-section text-center">
                 <div className="text-3xl font-bold text-amber-500">{stallRate.toFixed(1)}%</div>
                 <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">卡顿率</div>
                 <div className="text-xs text-gray-400 dark:text-gray-500 mt-1">{requestCount} 请求中 {stallMetrics.length} 次卡顿</div>
               </div>
-              <div className="bg-white dark:bg-gray-900 rounded-xl p-6 shadow-sm border border-gray-100 dark:border-gray-800 text-center">
+              <div className="sky-admin-section text-center">
                 <div className="text-3xl font-bold text-gray-900 dark:text-gray-100">{allTtfb.length || allTtlb.length}</div>
                 <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">总请求数</div>
                 <div className="text-xs text-gray-400 dark:text-gray-500 mt-1">监测周期内</div>
               </div>
             </div>
 
-            <div className="bg-white dark:bg-gray-900 rounded-xl p-6 shadow-sm border border-gray-100 dark:border-gray-800">
+            <div className="sky-admin-section">
               <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100 mb-4">卡顿时长分布</h3>
               <ReactECharts option={stallChartOption} style={{ height: 300 }} />
             </div>
 
-            <div className="bg-white dark:bg-gray-900 rounded-xl p-6 shadow-sm border border-gray-100 dark:border-gray-800">
+            <div className="sky-admin-section">
               <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100 mb-4">卡顿散点图</h3>
               {stallMetrics.length > 0 ? (
                 <ReactECharts option={stallTrendOption} style={{ height: 300 }} />
@@ -647,7 +568,7 @@ export function AdminPageClient({ currentUser, users, sessions, metrics }: Admin
               )}
             </div>
 
-            <div className="bg-white dark:bg-gray-900 rounded-xl shadow-sm border border-gray-100 dark:border-gray-800 overflow-hidden">
+            <div className="sky-admin-section is-table">
               <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-800">
                 <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100">卡顿详情</h3>
               </div>
@@ -715,7 +636,7 @@ export function AdminPageClient({ currentUser, users, sessions, metrics }: Admin
         )}
 
         {activeTab === "users" && (
-          <div className="bg-white dark:bg-gray-900 rounded-xl shadow-sm border border-gray-100 dark:border-gray-800 overflow-hidden">
+          <div className="sky-admin-section is-table">
             <table className="w-full">
               <thead className="bg-gray-50 dark:bg-gray-800/50">
                 <tr>
@@ -755,19 +676,6 @@ export function AdminPageClient({ currentUser, users, sessions, metrics }: Admin
             </table>
           </div>
         )}
-      </main>
     </div>
-  );
-}
-
-function StatBox({ label, value, unit, color }: { label: string; value: number; unit: string; color: string }) {
-  return (
-    <div className="text-center p-3 rounded-lg bg-gray-50 dark:bg-gray-800">
-      <div className="text-xs text-gray-400 dark:text-gray-500 mb-1">{label}</div>
-      <div className="text-lg font-bold text-gray-900 dark:text-gray-100" style={{ color }}>
-        {value}
-      </div>
-      <div className="text-xs text-gray-400 dark:text-gray-500">{unit}</div>
-    </div>
-  );
+  </ManagementShell>;
 }

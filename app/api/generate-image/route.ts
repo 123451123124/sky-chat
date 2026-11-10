@@ -1,33 +1,14 @@
 import { NextRequest } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
+import { generateImage, isImageGenerationConfigured } from "@/lib/image-generation";
 
 export async function POST(req: NextRequest) {
-  const user = await getCurrentUser();
-  if (!user) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const { prompt } = await req.json();
-
-  const response = await fetch(`${process.env.OPENAI_BASE_URL}/images/generations`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-    },
-    body: JSON.stringify({
-      model: "dall-e-3",
-      prompt,
-      n: 1,
-      size: "1024x1024",
-    }),
-  });
-
-  const data = await response.json();
-
-  if (data.error) {
-    return Response.json({ error: data.error.message }, { status: 500 });
-  }
-
-  return Response.json({ url: data.data[0].url });
+  if (!await getCurrentUser()) return Response.json({ error: "Unauthorized" }, { status: 401 });
+  if (!isImageGenerationConfigured()) return Response.json({ error: "当前未配置图片生成服务" }, { status: 503 });
+  const body = await req.json().catch(() => null);
+  if (typeof body?.prompt !== "string" || !body.prompt.trim()) return Response.json({ error: "请输入图片描述" }, { status: 400 });
+  try {
+    const result = await generateImage(body.prompt.trim());
+    return Response.json(result, { status: result.error ? 502 : 200 });
+  } catch { return Response.json({ error: "图片生成服务暂时不可用" }, { status: 502 }); }
 }

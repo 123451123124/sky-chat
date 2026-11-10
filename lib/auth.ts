@@ -1,6 +1,7 @@
 import { SignJWT, jwtVerify } from 'jose';
 import bcrypt from 'bcryptjs';
 import { cookies } from 'next/headers';
+import { prisma } from './prisma';
 
 const RAW_JWT_SECRET = process.env.JWT_SECRET;
 const JWT_SECRET = new TextEncoder().encode(
@@ -65,7 +66,11 @@ export async function getTokenFromCookies(): Promise<string | undefined> {
 export async function getCurrentUser(): Promise<JWTPayload | null> {
   const token = await getTokenFromCookies();
   if (!token) return null;
-  return verifyToken(token);
+  const payload = await verifyToken(token);
+  if (!payload) return null;
+  // Roles and memberships can be revoked without waiting for a seven-day JWT to expire.
+  const user = await prisma.user.findUnique({ where: { id: payload.userId }, select: { id: true, email: true, role: true } });
+  return user ? { userId: user.id, email: user.email, role: user.role } : null;
 }
 
 export function setAuthCookie(token: string) {

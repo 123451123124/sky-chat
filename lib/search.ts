@@ -7,7 +7,7 @@ export interface SearchResult {
   content: string;
 }
 
-export async function webSearch(query: string): Promise<{ results?: SearchResult[]; error?: string }> {
+export async function webSearch(query: string, signal?: AbortSignal): Promise<{ results?: SearchResult[]; error?: string }> {
   if (!SEARCH_API_KEY) {
     return { error: "搜索功能未配置 API Key" };
   }
@@ -27,7 +27,7 @@ export async function webSearch(query: string): Promise<{ results?: SearchResult
         search_depth: "basic",
         max_results: 5,
       }),
-      signal: controller.signal,
+      signal: signal ? AbortSignal.any([signal, controller.signal]) : controller.signal,
     });
 
     clearTimeout(timeoutId);

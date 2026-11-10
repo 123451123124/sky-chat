@@ -40,6 +40,8 @@ export const useAuthStore = create<AuthState>((set) => ({
   logout: async () => {
     await fetch('/api/auth/logout', { method: 'POST' });
     set({ user: null });
+    // A store outside React cannot use useRouter; sign-out discards the cached document.
+    // eslint-disable-next-line @next/next/no-location-assign-relative-destination
     window.location.href = '/login';
   },
 }));
