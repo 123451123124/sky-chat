@@ -1,15 +1,11 @@
 # Sky Chat - AI 智能对话平台
 
-三维功能后续实现计划见 [Three.js 三项功能实现方案](docs/Three.js三项功能实现方案.md)：优先建设回答证据探索、知识库语义地图和对话分支地图；三维讲解、AI 形象与语音反馈作为未来扩展。新增能力目前处于设计阶段。
+Sky Chat 是一个全栈 AI 聊天应用，支持 SSE 流式对话、文件知识库检索、Agent 补查和回答引用。管理员可以批量上传资料、配置可见范围并发布知识库。用户在聊天工具栏的「资料」中选择可访问的文件，回答来源可以用列表或 Three.js 关系图查看。
 
-全栈 AI 聊天客户端，支持 SSE 流式对话、文件知识库 RAG、单 Agent 检索与补查、Three.js 来源探索，以及监控与管理后台。
+- **应用**：Next.js App Router、TypeScript、Tailwind CSS、Zustand、Prisma 和 PostgreSQL。
+- **模型与 RAG**：聊天使用阿里云百炼的 OpenAI 兼容接口。环境变量模板配置 Elasticsearch + IK 做全文和向量检索，Kafka 处理入库任务，`text-embedding-v4` 生成 2048 维向量。
 
-RAG 进阶链路已实现，使用、限制和双进程部署见 [RAG 使用与部署](docs/RAG使用与部署.md)。管理员在管理平台批量上传并发布知识库，普通账号从聊天工具栏“资料”选择已发布文件；回答来源可切换列表与 3D 关系视图。
-
-进阶能力、开源复用与可复现评测见 [RAG 进阶改造](docs/RAG进阶改造与开源复用.md)。管理平台新增检索实验台、层级用户组、文件权限、父子/语义分块预览和文档版本。
-
-**技术栈：** Next.js 16.4.2 App Router + TypeScript + Tailwind CSS v4 + Zustand + Prisma + PostgreSQL (Supabase)
-**AI：** 阿里云 OpenAI 兼容接口 + 内置 Tool Calling 运行时；RAG 使用 text-embedding-v4 / pgvector。
+[快速开始](#快速开始) · [项目结构](#项目结构) · [RAG 核心架构](#rag-核心架构) · [部署与验收](docs/ES-Kafka-部署与验收.md)
 
 ---
 
@@ -35,7 +31,7 @@ cp .env.example .env
 # 编辑 .env 填写配置
 ```
 
-`.env` 所需变量：
+`.env` 主要配置：
 
 | 变量 | 说明 | 默认值 |
 |------|------|--------|
@@ -45,24 +41,34 @@ cp .env.example .env
 | `SEARCH_API_KEY` | Tavily 联网搜索密钥 | 可选 |
 | `SEARCH_API_URL` | 联网搜索接口 | `https://api.tavily.com/search` |
 | `JWT_SECRET` | JWT 签名密钥 | 生产环境必填；开发环境有默认值 |
+| `RAG_SEARCH_BACKEND` | 知识库检索后端 | 模板为 `elasticsearch` |
+| `RAG_INGESTION_BACKEND` | 文档入库任务后端 | 模板为 `kafka` |
+| `ELASTICSEARCH_URL` | Elasticsearch 服务地址 | `http://127.0.0.1:19200` |
+| `KAFKA_BROKERS` | Kafka broker 地址 | `127.0.0.1:19092` |
+| `EMBEDDING_MODEL` | 生成知识库向量的模型 | `text-embedding-v4` |
+| `RAG_STORAGE_DIR` | Web 和 worker 共用的文件存储目录 | `.data/rag` |
 
-### 初始化数据库
+### 启动完整 RAG 环境
+
+准备支持 `vector` 扩展的 PostgreSQL，并填好 `.env` 中的数据库连接、模型密钥和 JWT 签名密钥。使用模板中的 Elasticsearch 与 Kafka 配置时，可以用 Docker Compose 启动依赖。已有原生服务时，填写对应地址即可。Web 和 worker 使用同一个 `RAG_STORAGE_DIR`。
 
 ```bash
-npx prisma migrate deploy   # 首次运行先建表
-npm run seed                # 可选：创建管理员
+npm ci
+npx prisma generate
+npm run db:migrate
+npm run rag:infra                # 使用 Compose 启动 Elasticsearch（含 IK）与 Kafka
+npm run rag:check:distributed    # 检查 Elasticsearch 索引和 Kafka 主题
+npm run seed                     # 创建用于管理知识库的管理员
 ```
 
-普通用户可以直接注册。可用模型在 `lib/models.ts` 中配置，聊天接口使用客户端选择的模型。
-
-### 启动
+分别在两个终端启动 Web 和入库 worker。
 
 ```bash
-npm run dev      # 开发服务器 http://localhost:3000
-npm run build    # 生产构建
-npm run start    # 启动生产服务
-npm run rag:worker # 另一个终端运行：处理文件与向量入库
+npm run dev           # 终端 1，Web
+npm run rag:worker    # 终端 2，处理入库任务
 ```
+
+管理员在 `/admin/knowledge` 上传文件，等索引就绪后发布。用有权限的账号在 `/chat` 选择资料并提问，再到 `/admin/rag` 查看入库阶段或对照不同检索模式。原生依赖、端口、旧资料迁移和回滚见 [部署与验收](docs/ES-Kafka-部署与验收.md)。
 
 ### 其他命令
 
@@ -94,12 +100,15 @@ ADMIN_EMAIL=admin@example.com ADMIN_PASSWORD=secure-password npm run seed
 
 ## 项目结构
 
+RAG 的服务端入口是 [聊天 API](app/api/chat/route.ts) 和 [文档上传 API](app/api/documents/route.ts)。聊天侧通过 [Agent 运行时](lib/agent/runtime.ts) 调用检索，入库侧由 [Kafka worker](lib/rag/messaging/worker.ts) 执行解析、分块、向量化和索引。
+
 ```
 ./
 ├── app/
 │   ├── page.tsx           # 首页（已登录自动跳转 /chat）
 │   ├── login/             # 登录页
 │   ├── register/          # 注册页
+│   ├── preview/           # 无需数据库和模型密钥的界面预览
 │   ├── chat/              # AI 聊天客户端
 │   │   ├── page.tsx       # 服务端鉴权与数据预取
 │   │   ├── ChatPageClient.tsx # 会话管理
@@ -125,7 +134,12 @@ ADMIN_EMAIL=admin@example.com ADMIN_PASSWORD=secure-password npm run seed
 │       ├── session/       # 会话管理与资料选择（[id]/documents/）
 │       ├── documents/     # 文档上传与管理
 │       ├── knowledge/     # 查询、创建与发布知识库
-│       ├── admin/         # 检索、评测、入库管道与用户组接口
+│       ├── agent-runs/    # Agent 执行记录接口
+│       ├── admin/
+│       │   ├── retrieval/  # 检索实验接口
+│       │   ├── evaluation/ # 检索评测接口
+│       │   ├── pipeline/   # 入库状态与失败阶段重试
+│       │   └── groups/     # 层级用户组管理
 │       ├── message/       # 消息管理
 │       ├── share/         # 分享链接生成
 │       ├── generate-image/ # 可选的独立图片服务
@@ -142,7 +156,10 @@ ADMIN_EMAIL=admin@example.com ADMIN_PASSWORD=secure-password npm run seed
 │   ├── sse-parser.ts      # SSE 流式解析层
 │   ├── ai-stream.ts       # 类型化事件分发（14 种 chunk 类型）
 │   ├── stream-buffer.ts   # RAF 批量渲染缓冲
+│   ├── agent/             # 查询规划、工具调用与引用校验
 │   ├── rag/               # 文档解析、分块、权限校验与检索
+│   │   ├── access.ts      # 知识库与文件访问控制
+│   │   ├── retrieval.ts   # 检索入口和 PostgreSQL 路径
 │   │   ├── pipeline/      # 入库阶段执行与中间产物
 │   │   ├── messaging/     # Kafka 消费与阶段消息投递
 │   │   └── search/        # Elasticsearch 索引、BM25 与向量检索
@@ -157,14 +174,23 @@ ADMIN_EMAIL=admin@example.com ADMIN_PASSWORD=secure-password npm run seed
 │   ├── rag-kafka-worker.ts # 启动 Kafka 入库 worker
 │   ├── rag-reindex-es.ts   # 重建 Elasticsearch 索引
 │   └── rag-evaluate.ts     # 运行检索评测
-└── store/
-    ├── useChatStore.ts    # 聊天状态机（Zustand）
-    └── useAuthStore.ts    # 认证状态
+├── store/
+│   ├── useChatStore.ts    # 聊天状态机（Zustand）
+│   └── useAuthStore.ts    # 认证状态
+└── tests/                 # RAG、Agent 与浏览器回归测试
 ```
 
 ---
 
 ## 核心架构
+
+### RAG 核心架构
+
+- **入库**：上传后，API 在 PostgreSQL 事务中记录文档、索引版本和 Outbox 事件。Kafka worker 依次解析、分块、生成向量并写入 Elasticsearch。索引就绪后切换生效版本。后台可查看阶段状态，并对符合条件的草稿资料重试失败阶段。
+- **检索**：Agent 根据问题检索选中的资料。Elasticsearch 并行执行 BM25 和 2048 维 HNSW 向量召回，在关键词路径做短语 Rescore，再用 RRF 融合结果。检索实验台可对照不同模式，并选择 `qwen3-rerank` 模型重排。
+- **权限与引用**：服务端用 PostgreSQL 中的知识库、用户组和文件权限约束召回，并复核来源和引用。聊天通过 SSE 返回检索记录，用户可以展开来源列表或查看 3D 关系图。
+
+`RAG_SEARCH_BACKEND=postgres` 和 `RAG_INGESTION_BACKEND=database` 可切回原有 pgvector 与数据库队列。迁移后新上传的资料如需走旧路径，需要先按旧配置重新索引。详见 [旧资料迁移与回滚](docs/ES-Kafka-部署与验收.md#旧资料迁移与回滚)。
 
 ### 流式对话数据流
 
@@ -260,7 +286,7 @@ npm audit --omit=dev
 
 浏览器测试使用模拟接口，不需要真实数据库或模型密钥。运行前停止本项目的开发服务器；测试会在端口 3101 临时启动开发服务器并自动移除测试页面。默认使用本机 Chrome；没有 Chrome 时安装 Chromium 并调整 `playwright.config.ts` 的 `channel`。
 
-优化记录和验证范围见 [reports/optimization.md](reports/optimization.md)。
+RAG 的服务检查、入库验证和检索评测命令见 [可复现验证](docs/ES-Kafka-部署与验收.md#可复现验证)。
 
 
 ## 阿里云百炼模型配置
@@ -279,13 +305,3 @@ npm audit --omit=dev
 [接口说明](https://help.aliyun.com/zh/model-studio/compatibility-of-openai-with-dashscope) · [官方模型列表](https://help.aliyun.com/zh/model-studio/text-generation-model)
 
 图片生成使用独立的 `IMAGE_API_KEY`、`IMAGE_BASE_URL`、`IMAGE_MODEL`，需要兼容 OpenAI Images API 的服务；未配置时不向聊天模型提供图片生成工具，避免将千问聊天接口误用于旧的 GPT 图片接口。
-
-数据库通过控制台提供的 Supabase Session pooler URI 连接（5432 端口），适用于当前 IPv4 网络。RAG 首版已应用新增数据表与 pgvector 迁移；新环境执行 `npm run db:migrate`，无需重置已有账号或聊天数据。
-
-## TypeScript / Elasticsearch / Kafka RAG
-
-当前 RAG 使用 Elasticsearch 8.19 + IK、2048 维 HNSW KNN 与 BM25，经过短语 Rescore、RRF 融合和可选 qwen3-rerank 后返回父块与引用。KafkaJS 将入库拆为解析、分块、向量化、索引四阶段；业务事务 Outbox、租约/epoch 幂等、检查点及 DLQ 重放处理失败恢复。权限仍由业务数据库实时判断，库/文件权限交集在两路召回前过滤，并在模型调用后复核。
-
-管理平台 `/admin/knowledge` 统一批量上传与发布共享资料；`/admin/rag` 提供五种检索对照、评测和文件阶段/DLQ 记录。聊天页保留 Agent 工具循环、SSE 与来源视图。
-
-部署、迁移、回滚及验收步骤见 [ES-Kafka 部署与验收](docs/ES-Kafka-部署与验收.md)。本机服务采用官方原生包完成验收；Compose 配置已提供，容器拉取受当前网络限制。
