@@ -1,6 +1,6 @@
 # Sky Chat 关键知识点教学文档
 
-> 本文档覆盖项目中每个技术亮点的原理、实现思路和面试高频问题
+> 本文档覆盖项目中每个技术亮点的原理和实现思路。
 
 ---
 
@@ -55,11 +55,6 @@ const valid = await bcrypt.compare(password, user.password);
 2. **可调工作因子** — `SALT_ROUNDS=10` 意味着 2^10=1024 次迭代，暴力破解成本高
 3. **慢哈希设计** — 故意设计为计算缓慢，阻止暴力破解
 
-**面试追问：SALT_ROUNDS 设多少合适？**
-- 10 是当前推荐值，约 100ms 哈希时间
-- 每增加 1，计算时间翻倍
-- 需要在安全性和用户体验间权衡
-
 ### JWT 签发与验证（jose 库）
 
 ```typescript
@@ -84,17 +79,6 @@ const { payload } = await jwtVerify(token, JWT_SECRET);
 2. **零原生依赖** — jsonwebtoken 依赖 Node.js crypto 模块，Edge 不支持
 3. **更小的 Bundle** — jose 支持 Tree Shaking
 
-**面试追问：HS256 和 RS256 的区别？**
-
-| 特性 | HS256（对称） | RS256（非对称） |
-|------|-------------|---------------|
-| 密钥 | 同一个密钥签发和验证 | 私钥签发，公钥验证 |
-| 适用场景 | 单服务 | 微服务/第三方验证 |
-| 性能 | 更快 | 稍慢 |
-| 安全性 | 密钥泄露即全面失效 | 私钥泄露才失效 |
-
-本项目使用 HS256，因为只有一个服务签发和验证 Token。
-
 ### HttpOnly Cookie 安全策略
 
 ```typescript
@@ -116,11 +100,6 @@ function setAuthCookie(token: string) {
 1. **httpOnly: true** — JavaScript 无法通过 `document.cookie` 读取，防止 XSS 窃取 Token
 2. **secure: true** — 只在 HTTPS 下传输，防止中间人攻击
 3. **sameSite: 'lax'** — 跨站请求不携带 Cookie，防止 CSRF 攻击
-
-**面试追问：sameSite 的三个值？**
-- `strict` — 任何跨站请求都不带 Cookie（最安全但体验差，从外链点进来需要重新登录）
-- `lax` — GET 导航请求带 Cookie，POST/iframe 等不带（推荐）
-- `none` — 都带（必须配合 secure）
 
 ---
 
@@ -255,24 +234,6 @@ class SSEParser {
 **为什么需要 buffer？** TCP 是流式协议，一次 `reader.read()` 可能：
 - 收到半个事件 → 需要缓冲等待后续数据
 - 收到多个事件 → 需要逐个解析
-
-### 面试高频问题
-
-**Q: SSE 和 WebSocket 的区别？**
-
-| 特性 | SSE | WebSocket |
-|------|-----|-----------|
-| 方向 | 服务端 → 客户端（单向） | 双向 |
-| 协议 | HTTP | WS |
-| 重连 | 浏览器自动重连 | 需手动实现 |
-| 兼容性 | 原生支持（除 IE） | 原生支持 |
-| 适用场景 | AI 流式输出、通知推送 | 实时聊天、协作编辑 |
-
-**Q: 为什么 AI 对话用 SSE 而不是 WebSocket？**
-- AI 对话是请求-响应模式，不需要双向通信
-- SSE 基于 HTTP，天然兼容 CDN、代理、负载均衡
-- 断线重连更简单，SSE 有 Last-Event-ID 机制
-- Serverless 平台对 WebSocket 支持有限
 
 ---
 
@@ -464,24 +425,6 @@ while (true) {
 }
 ```
 
-### 面试高频问题
-
-**Q: 为什么用 ReadableStream 而不是直接 res.json()？**
-
-AI 回复是流式的，需要逐 token 展示。如果等全部生成完再返回，用户需要等待数秒甚至数十秒才能看到任何内容。ReadableStream 允许服务端边生成边推送，实现"打字机效果"。
-
-**Q: 如何实现中断生成？**
-
-```typescript
-const abortController = new AbortController();
-fetch("/api/chat", { signal: abortController.signal });
-
-// 用户点击停止
-abortController.abort();
-```
-
-`AbortController` 会同时中断客户端的 fetch 请求和服务端的 ReadableStream。
-
 ---
 
 ## 五、有限状态机：消息生命周期管理
@@ -501,12 +444,6 @@ idle → thinking → answering → idle
 | `answering` | 正在接收流式文本 | 打字机效果 |
 | `tool_calling` | AI 调用工具中 | 工具调用卡片 |
 | `error` | 出错 | 错误提示 |
-
-### 面试高频问题
-
-**Q: 为什么不用 boolean 标志（如 isLoading）？**
-
-boolean 只能表达两种状态，无法区分"等待首字节"和"正在接收数据"。状态机能精确表达所有阶段，避免状态组合爆炸（多个 boolean 组合产生不可能状态）。
 
 ---
 
@@ -551,18 +488,6 @@ class StreamBuffer {
 - 渲染频次从峰值 **120 次/秒 → 60 次/秒以下**（等于屏幕刷新率）
 - 每次 setState 携带更多数据，减少 React reconciliation 开销
 - 用户感知更流畅，因为渲染与屏幕刷新同步
-
-### 面试高频问题
-
-**Q: 为什么用 requestAnimationFrame 而不是 setTimeout？**
-
-- RAF 与浏览器渲染周期同步（通常 16.6ms 一帧），不会造成帧丢失
-- setTimeout(fn, 0) 实际延迟约 4ms，且不与渲染对齐，可能在一帧内触发多次
-- 当页面不可见时 RAF 自动暂停，节省资源
-
-**Q: 为什么不用 React 18 的自动批处理？**
-
-React 18 的自动批处理确实能在同一事件循环中合并 setState，但 SSE chunk 来自异步的 `reader.read()`，每次 read 完成都是独立的微任务，不会被自动批处理。Buffer + RAF 是在应用层主动合并。
 
 ---
 
@@ -633,14 +558,6 @@ const virtualizer = useVirtualizer({
 
 `estimateSize` 是关键 — 初始估算不需要精确，TanStack Virtual 会在渲染后用 `measureElement` 测量真实高度并更新。
 
-### 面试高频问题
-
-**Q: 虚拟滚动的难点是什么？**
-
-1. **动态高度** — 消息高度不固定，需要先估算后测量
-2. **滚动位置维护** — 新消息插入时不能跳转
-3. **快速滚动** — overscan 太少会闪烁，太多失去虚拟化意义
-
 ---
 
 ## 九、Function Calling 图片生成
@@ -706,16 +623,6 @@ async function executeTool(name: string, args: Record<string, unknown>) {
   → 最多 MAX_STEPS 轮
 ```
 
-### 面试高频问题
-
-**Q: Function Calling 和 Plugin 有什么区别？**
-
-Function Calling 是模型能力 — 模型输出结构化的函数调用意图，由应用层执行。Plugin 是 OpenAI 平台功能 — OpenAI 服务器执行函数。前者更灵活，后者更简单。
-
-**Q: 工具调用的参数如何验证？**
-
-OpenAI 返回的 `arguments` 是 JSON 字符串，需要 `JSON.parse()` 解析。应该 try-catch 包裹，解析失败时给模型返回错误信息，让模型自我修正。
-
 ---
 
 ## 十、分享功能实现
@@ -750,10 +657,6 @@ export default async function SharePage({ params }) {
 2. **更小的 Page Chunk** — 客户端 JS 从 ~50KB 降到 ~5KB
 3. **更好的 SEO** — 搜索引擎可以直接索引分享内容
 4. **更快的 FCP** — 用户看到内容不需要等 JS 加载执行
-
-**面试追问：分享页需要登录吗？**
-
-不需要。分享页是公开的只读页面，任何人通过链接都可以查看。中间件的 matcher 不包含 `/share` 路由。
 
 ---
 
